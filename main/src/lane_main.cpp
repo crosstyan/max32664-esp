@@ -9,6 +9,7 @@
 #include <ranges>
 #include <span>
 #include <tuple>
+#include <flash.hpp>
 
 namespace app {
 void IRAM_ATTR delay_us(uint32_t us) {
@@ -35,6 +36,8 @@ static constexpr auto delay_ms = [](uint32_t ms) {
 };
 } // namespace app
 
+
+constexpr auto DEFAULT_I2C_TIMEOUT_MS = 50;
 extern "C" [[noreturn]]
 void app_main();
 
@@ -55,6 +58,31 @@ void app_main() {
 	};
 	i2c_master_bus_handle_t bus_handle;
 	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+
+	const auto i2c_detect = [bus_handle]() {
+		constexpr auto I2C_TOOL_TIMEOUT_VALUE_MS = 50;
+		uint8_t address;
+		printf("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\r\n");
+		for (int i = 0; i < 128; i += 16) {
+			printf("%02x: ", i);
+			for (int j = 0; j < 16; j++) {
+				fflush(stdout);
+				address       = i + j;
+				esp_err_t ret = i2c_master_probe(bus_handle, address, I2C_TOOL_TIMEOUT_VALUE_MS);
+				if (ret == ESP_OK) {
+					printf("%02x ", address);
+				} else if (ret == ESP_ERR_TIMEOUT) {
+					printf("UU ");
+				} else {
+					printf("-- ");
+				}
+			}
+			printf("\r\n");
+		}
+
+		return 0;
+	};
+	i2c_detect();
 
 	i2c_device_config_t dev_cfg = {
 		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -121,13 +149,13 @@ void app_main() {
 		std::array<uint8_t, MAX_IN_ARRAY_SIZE> w_data = {family_byte, index_byte};
 		std::ranges::copy(in, w_data.begin() + 2);
 		auto in_buf = std::span(w_data.data(), in.size() + 2);
-		err         = i2c_master_transmit(dev_handle, in_buf.data(), in_buf.size(), -1);
+		err         = i2c_master_transmit(dev_handle, in_buf.data(), in_buf.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			gpio_set_level(GPIO_NUM_2, 1);
 			return {err, status};
 		}
 		delay_ms(wait_time_ms);
-		err = i2c_master_receive(dev_handle, &status, 1, -1);
+		err = i2c_master_receive(dev_handle, &status, 1, DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			gpio_set_level(GPIO_NUM_2, 1);
 			return {err, status};
@@ -160,13 +188,13 @@ void app_main() {
 		gpio_set_level(GPIO_NUM_2, 0);
 		delay_us(250);
 		const std::array<uint8_t, 3> w_data = {0x01, 0x00, 0x08};
-		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), -1);
+		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			return err;
 		}
 		delay_ms(2);
 		std::array<uint8_t, 1> out{0};
-		err = i2c_master_receive(dev_handle, out.data(), out.size(), -1);
+		err = i2c_master_receive(dev_handle, out.data(), out.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			return err;
 		}
@@ -174,7 +202,8 @@ void app_main() {
 		return ESP_OK;
 	};
 
-	ESP_ERROR_CHECK(i2c_master_probe(bus_handle, 0x55, -1));
+	const auto msbl = flash::msbl();
+	ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
 
 	while (true) {
 		esp_err_t esp_err;
