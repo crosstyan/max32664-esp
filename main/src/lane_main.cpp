@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
 #include <esp_log.h>
@@ -10,6 +12,7 @@
 #include <span>
 #include <tuple>
 #include <flash.hpp>
+#include <tl/expected.hpp>
 
 namespace app {
 void IRAM_ATTR delay_us(uint32_t us) {
@@ -34,6 +37,23 @@ void IRAM_ATTR delay_us(uint32_t us) {
 static constexpr auto delay_ms = [](uint32_t ms) {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 };
+
+void print_as_hex(std::span<const uint8_t> data) {
+	int i = 0;
+	for (const auto &byte : data) {
+		bool is_end = i == data.size() - 1;
+		if (is_end) {
+			printf("%02x\n", byte);
+		} else {
+			if (i % 16 == 15) {
+				printf("%02x\n", byte);
+			} else {
+				printf("%02x ", byte);
+			}
+		}
+		i += 1;
+	}
+}
 } // namespace app
 
 
@@ -44,6 +64,7 @@ void app_main();
 [[noreturn]]
 void app_main() {
 	using namespace app;
+	using namespace tl;
 	constexpr auto TAG = "main";
 	delay_ms(200);
 
@@ -110,7 +131,7 @@ void app_main() {
 	delay_ms(1'500);
 	ESP_LOGI(TAG, "ready");
 
-	const auto read_register =
+	const auto read_command =
 		[dev_handle](uint8_t family_byte, uint8_t index_byte,
 					 std::span<uint8_t> out,
 					 uint16_t wait_time_ms = 2) -> esp_err_t {
@@ -137,26 +158,21 @@ void app_main() {
 		return ESP_OK;
 	};
 
-	const auto write_register =
+	// write register with external buffer (note that the first two bytes of `in` should be the family and index bytes)
+	const auto write_command_ext_buf =
 		[dev_handle](
-			uint8_t family_byte, uint8_t index_byte, std::span<uint8_t> in,
+			std::span<uint8_t> in,
 			uint16_t wait_time_ms = 2) -> std::tuple<esp_err_t, uint8_t> {
 		esp_err_t err;
-		uint8_t status                   = 0xff;
-		constexpr auto MAX_IN_ARRAY_SIZE = 32;
-		constexpr auto MAX_IN_BUF        = MAX_IN_ARRAY_SIZE - 2;
-		if (in.size() > MAX_IN_BUF) {
-			return {ESP_ERR_NO_MEM, status};
-		}
+		uint8_t status = 0xff;
+
 		gpio_set_level(GPIO_NUM_2, 0);
 		constexpr auto on_end = [] {
 			gpio_set_level(GPIO_NUM_2, 1);
 		};
 		delay_us(250);
-		std::array<uint8_t, MAX_IN_ARRAY_SIZE> w_data = {family_byte, index_byte};
-		std::ranges::copy(in, w_data.begin() + 2);
-		auto in_buf = std::span(w_data.data(), in.size() + 2);
-		err         = i2c_master_transmit(dev_handle, in_buf.data(), in_buf.size(), DEFAULT_I2C_TIMEOUT_MS);
+
+		err = i2c_master_transmit(dev_handle, in.data(), in.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			on_end();
 			return {err, status};
@@ -171,53 +187,61 @@ void app_main() {
 		return {ESP_OK, status};
 	};
 
-	const auto write_register_byte =
-		[write_register](uint8_t family_byte, uint8_t index_byte, uint8_t data,
-						 uint16_t wait_time_ms = 2) {
-			uint8_t in[] = {data};
-			return write_register(family_byte, index_byte, in, wait_time_ms);
-		};
-
-	const auto read_info = [read_register] {
-		uint8_t out[2]{0};
-		auto err = read_register(0x02, 0x00, out);
-		ESP_ERROR_CHECK(err);
-		if (auto status = out[0]; status == 0) {
-			ESP_LOGI(TAG, "value=%d", out[1]);
-		} else {
-			ESP_LOGE(TAG, "status=%d", status);
-			ESP_LOGW(TAG, "value=%d", out[1]);
+	// write register with a stack-allocated buffer of size N
+	const auto write_command =
+		[write_command_ext_buf]<uint16_t N = 18>(
+			uint8_t family_byte, uint8_t index_byte, std::span<uint8_t> in,
+			uint16_t wait_time_ms = 2) -> std::tuple<esp_err_t, uint8_t> {
+		uint8_t status            = 0xff;
+		constexpr auto MAX_IN_BUF = N - 2;
+		if (in.size() > MAX_IN_BUF) {
+			return {ESP_ERR_NO_MEM, status};
 		}
+		std::array<uint8_t, N> w_data = {family_byte, index_byte};
+		std::ranges::copy(in, w_data.begin() + 2);
+		auto in_buf = std::span(w_data.data(), in.size() + 2);
+		return write_command_ext_buf(in_buf, wait_time_ms);
 	};
 
-	const auto enter_bootloader = [dev_handle] {
-		esp_err_t err;
-		gpio_set_level(GPIO_NUM_2, 0);
-		delay_us(250);
-		const std::array<uint8_t, 3> w_data = {0x01, 0x00, 0x08};
-		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), DEFAULT_I2C_TIMEOUT_MS);
-		if (err != ESP_OK) {
-			return err;
+	// write register with a single byte of data
+	const auto write_command_byte =
+		[write_command_ext_buf](uint8_t family_byte, uint8_t index_byte, uint8_t data,
+								uint16_t wait_time_ms = 2) {
+			uint8_t in[3] = {family_byte, index_byte, data};
+			return write_command_ext_buf(in, wait_time_ms);
+		};
+
+	const auto write_bootloader = [=]() {
+		constexpr auto OK  = 0;
+		constexpr auto tag = "bl";
+		uint8_t out[2]{};
+		esp_err_t err = read_command(flash::FMY_DEV_MODE_W, flash::IDX_BL_W_NONCE, out);
+		ESP_ERROR_CHECK(err);
+		if (out[0] != OK || out[1] != flash::DEV_MODE_R_BL) {
+			ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(%d, %d)", out[0], out[1]);
+			return ESP_FAIL;
 		}
-		delay_ms(2);
-		std::array<uint8_t, 1> out{0};
-		err = i2c_master_receive(dev_handle, out.data(), out.size(), DEFAULT_I2C_TIMEOUT_MS);
-		if (err != ESP_OK) {
-			return err;
-		}
-		gpio_set_level(GPIO_NUM_2, 1);
+		// {
+		// 	auto []
+		// }
+
 		return ESP_OK;
 	};
 
 	const auto msbl = flash::msbl();
 	ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
+	printf("auth_bytes(%d)=", flash::auth_bytes().size());
+	print_as_hex(flash::auth_bytes());
+	printf("init_vector(%d)=", flash::init_vector_bytes().size());
+	print_as_hex(flash::init_vector_bytes());
+	ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
 
 	while (true) {
 		esp_err_t esp_err;
 		uint8_t out[2];
 
 	retry:
-		esp_err = read_register(0x02, 0x00, out);
+		esp_err = read_command(0x02, 0x00, out);
 		delay_ms(10);
 		if (esp_err != ESP_OK) {
 			ESP_LOGW(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
@@ -226,18 +250,18 @@ void app_main() {
 			ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
 		}
 
-		esp_err = read_register(0xFF, 0x00, out);
+		esp_err = read_command(0xFF, 0x00, out);
 		ESP_LOGI(TAG, "out(mcu)=(%d, %d)", out[0], out[1]);
 		delay_ms(10);
 
 		uint8_t version[4];
-		esp_err = read_register(0x81, 0x00, version);
+		esp_err = read_command(0x81, 0x00, version);
 		ESP_LOGI(TAG, "out(version)=(%d, %d, %d, %d)", version[0], version[1],
 				 version[2], version[3]);
 		delay_ms(10);
 
 		uint8_t page_size[3];
-		esp_err                   = read_register(0x81, 0x01, page_size);
+		esp_err                   = read_command(0x81, 0x01, page_size);
 		uint16_t &page_size_be    = *reinterpret_cast<uint16_t *>(page_size + 1);
 		uint16_t page_size_native = __ntohs(page_size_be);
 		ESP_LOGI(TAG, "out(page_size)=(%d, %d, %d) size=%d", page_size[0],
