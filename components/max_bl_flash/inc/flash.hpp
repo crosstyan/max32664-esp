@@ -9,8 +9,8 @@ constexpr auto AES_NONCE_SIZE  = 11;
 constexpr auto MAX_PAGE_SIZE   = 8192;
 constexpr auto CHECKBYTES_SIZE = 16;
 
-constexpr auto PER_READ_SIZE = MAX_PAGE_SIZE + CHECKBYTES_SIZE;
-constexpr auto CONTENT_START = 0x4c;
+constexpr auto APP_START_OFFSET = 0x4c;
+// layout: PAGE_NUM * (PAGE_SIZE + CHECKBYTES_SIZE) from APP_START_OFFSET
 
 // write to the bootloader
 constexpr uint8_t FMY_BL_W           = 0x80;
