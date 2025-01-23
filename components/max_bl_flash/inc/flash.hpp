@@ -83,8 +83,7 @@ enum StatusCode : uint8_t {
 	ERR_BTLDR_TRY_AGAIN = 0x05,
 };
 
-const std::span<const uint8_t>
-msbl();
+const std::span<const uint8_t> msbl();
 const std::span<const uint8_t> auth_bytes();
 const std::span<const uint8_t> init_vector_bytes();
 uint8_t number_of_pages();
