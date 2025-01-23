@@ -257,10 +257,10 @@ void app_main() {
 			ESP_LOGI(tag, "number of pages %d written", num_of_pages);
 
 			// use heap to avoid stack overflow
-			uint8_t *wr_buf_heap = new uint8_t[2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE];
-			const auto wr_buf    = std::span(wr_buf_heap, 2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
-			const auto on_ret    = [wr_buf_heap] {
-                delete[] wr_buf_heap;
+			uint8_t *wr_buf_heap  = new uint8_t[2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE];
+			const auto wr_buf     = std::span(wr_buf_heap, 2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+			const auto on_cleanup = [wr_buf_heap] {
+				delete[] wr_buf_heap;
 			};
 
 			// write nonce
@@ -270,11 +270,11 @@ void app_main() {
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::init_vector_bytes().size()));
 			if (!status) {
 				ESP_LOGE(tag, "failed to write nonce; write_command_ext_buf error=%d", status.error());
-				on_ret();
+				on_cleanup();
 				return status.error();
 			} else if (status.value() != OK) {
 				ESP_LOGE(tag, "failed to write nonce; status=%d", status.value());
-				on_ret();
+				on_cleanup();
 				return ESP_FAIL;
 			}
 			ESP_LOGI(tag, "nonce written");
@@ -286,11 +286,11 @@ void app_main() {
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()), 10);
 			if (!status) {
 				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
-				on_ret();
+				on_cleanup();
 				return status.error();
 			} else if (status.value() != OK) {
 				ESP_LOGE(tag, "failed to write auth; status=%d", status.value());
-				on_ret();
+				on_cleanup();
 				return ESP_FAIL;
 			}
 			ESP_LOGI(tag, "auth written");
@@ -316,9 +316,9 @@ void app_main() {
 			ESP_LOGI(tag, "app erased");
 
 			// send pages
-			wr_buf[0]   = flash::FMY_BL_W;
-			wr_buf[1]   = flash::IDX_BL_W_SEND_PAGE;
-			auto offset = flash::APP_START_OFFSET;
+			wr_buf[0]       = flash::FMY_BL_W;
+			wr_buf[1]       = flash::IDX_BL_W_SEND_PAGE;
+			uint32_t offset = flash::APP_START_OFFSET;
 			for (uint16_t i = 0; i < num_of_pages; i++) {
 				const auto page = flash::msbl().subspan(offset + i * (flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE),
 														flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
@@ -344,6 +344,7 @@ void app_main() {
 				}
 				ESP_LOGI(tag, "page %d written", i);
 			}
+			on_cleanup();
 		}
 
 		ESP_LOGI(tag, "bootloader written");
