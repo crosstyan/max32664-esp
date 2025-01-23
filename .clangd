@@ -1,0 +1,6 @@
+CompileFlags:
+  Add: [-Wno-unknown-warning-option]
+  Compiler: riscv32-esp-elf-gcc
+  Remove: [-m*, -f*]
+Diagnostics:
+  Suppress: [attribute_section_invalid_for_target]
