@@ -1,19 +1,18 @@
-Need certain IDF version to build the project.
+# HR band
 
-In your IDF directory.
+Require [`esp-idf v5.3.2`](https://github.com/espressif/esp-idf/tree/v5.3.2)
 
-```bash
-cd $IDF_PATH
-# I assume your origin is 
-# https://github.com/espressif/esp-idf.git
-# or v4.4.6
-git fetch origin release/v4.4
-git checkout release/v4.4
-git submodule update --init --recursive
-./install.sh
-source export.sh
+## Clangd
+
+See also [`.clangd`](.clangd) for the configuration file. You might need to modify the your Visual Studio Code settings.
+
+```jsonc
+{
+    // Your Visual Studio Code settings
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--query-driver=**/*"
+    ],
+}
 ```
 
-```
--DIDF_MAINTAINER=1
-```
