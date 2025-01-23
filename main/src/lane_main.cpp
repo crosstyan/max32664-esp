@@ -52,7 +52,7 @@ void app_main() {
 		.sda_io_num        = GPIO_NUM_10,
 		.scl_io_num        = GPIO_NUM_11,
 		.clk_source        = I2C_CLK_SRC_DEFAULT,
-		.glitch_ignore_cnt = 7,
+		.glitch_ignore_cnt = 14,
 		.flags             = {.enable_internal_pullup = true},
 	};
 	i2c_master_bus_handle_t bus_handle;
@@ -87,7 +87,7 @@ void app_main() {
 	i2c_device_config_t dev_cfg = {
 		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
 		.device_address  = 0x55,
-		.scl_speed_hz    = 400'000,
+		.scl_speed_hz    = 800'000,
 	};
 	i2c_master_dev_handle_t dev_handle;
 	ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
@@ -117,19 +117,23 @@ void app_main() {
 		esp_err_t err;
 		gpio_set_level(GPIO_NUM_2, 0);
 		delay_us(250);
+		constexpr auto on_end = [] {
+			gpio_set_level(GPIO_NUM_2, 1);
+		};
 		const std::array<uint8_t, 2> w_data = {family_byte, index_byte};
 		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), -1);
 		if (err != ESP_OK) {
-			gpio_set_level(GPIO_NUM_2, 1);
+			on_end();
 			return err;
 		}
 		delay_ms(wait_time_ms);
 		err = i2c_master_receive(dev_handle, out.data(), out.size(), -1);
 		if (err != ESP_OK) {
-			gpio_set_level(GPIO_NUM_2, 1);
+			on_end();
 			return err;
 		}
 		gpio_set_level(GPIO_NUM_2, 1);
+		on_end();
 		return ESP_OK;
 	};
 
@@ -138,29 +142,32 @@ void app_main() {
 			uint8_t family_byte, uint8_t index_byte, std::span<uint8_t> in,
 			uint16_t wait_time_ms = 2) -> std::tuple<esp_err_t, uint8_t> {
 		esp_err_t err;
-		uint8_t status = 0xff;
-		gpio_set_level(GPIO_NUM_2, 0);
-		delay_us(250);
+		uint8_t status                   = 0xff;
 		constexpr auto MAX_IN_ARRAY_SIZE = 32;
 		constexpr auto MAX_IN_BUF        = MAX_IN_ARRAY_SIZE - 2;
 		if (in.size() > MAX_IN_BUF) {
 			return {ESP_ERR_NO_MEM, status};
 		}
+		gpio_set_level(GPIO_NUM_2, 0);
+		constexpr auto on_end = [] {
+			gpio_set_level(GPIO_NUM_2, 1);
+		};
+		delay_us(250);
 		std::array<uint8_t, MAX_IN_ARRAY_SIZE> w_data = {family_byte, index_byte};
 		std::ranges::copy(in, w_data.begin() + 2);
 		auto in_buf = std::span(w_data.data(), in.size() + 2);
 		err         = i2c_master_transmit(dev_handle, in_buf.data(), in_buf.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
-			gpio_set_level(GPIO_NUM_2, 1);
+			on_end();
 			return {err, status};
 		}
 		delay_ms(wait_time_ms);
 		err = i2c_master_receive(dev_handle, &status, 1, DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
-			gpio_set_level(GPIO_NUM_2, 1);
+			on_end();
 			return {err, status};
 		}
-		gpio_set_level(GPIO_NUM_2, 1);
+		on_end();
 		return {ESP_OK, status};
 	};
 
@@ -208,9 +215,16 @@ void app_main() {
 	while (true) {
 		esp_err_t esp_err;
 		uint8_t out[2];
+
+	retry:
 		esp_err = read_register(0x02, 0x00, out);
-		ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
 		delay_ms(10);
+		if (esp_err != ESP_OK) {
+			ESP_LOGW(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
+			goto retry;
+		} else {
+			ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
+		}
 
 		esp_err = read_register(0xFF, 0x00, out);
 		ESP_LOGI(TAG, "out(mcu)=(%d, %d)", out[0], out[1]);
