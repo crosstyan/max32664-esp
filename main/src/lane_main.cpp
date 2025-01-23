@@ -48,17 +48,17 @@ void app_main() {
 	delay_ms(200);
 
 	i2c_master_bus_config_t i2c_mst_config = {
-		.i2c_port   = I2C_NUM_0,
-		.sda_io_num = GPIO_NUM_10,
-		.scl_io_num = GPIO_NUM_11,
-		.clk_source = I2C_CLK_SRC_DEFAULT,
-
+		.i2c_port          = I2C_NUM_0,
+		.sda_io_num        = GPIO_NUM_10,
+		.scl_io_num        = GPIO_NUM_11,
+		.clk_source        = I2C_CLK_SRC_DEFAULT,
 		.glitch_ignore_cnt = 7,
 		.flags             = {.enable_internal_pullup = true},
 	};
 	i2c_master_bus_handle_t bus_handle;
 	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 
+	// https://github.com/espressif/esp-idf/blob/fb25eb02ebcf78a78b4c34a839238a4a56accec7/examples/peripherals/i2c/i2c_tools/main/cmd_i2ctools.c#L109
 	const auto i2c_detect = [bus_handle]() {
 		constexpr auto I2C_TOOL_TIMEOUT_VALUE_MS = 50;
 		uint8_t address;
