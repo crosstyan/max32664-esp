@@ -11,6 +11,7 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <span>
+#include <ranges>
 #include <tuple>
 #include <flash.hpp>
 #include <tl/expected.hpp>
@@ -39,9 +40,14 @@ void delay_ms(uint32_t ms) {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 };
 
+auto enumerate(const auto &data) {
+	return data | std::views::transform([i = 0](const auto &value) mutable {
+			   return std::make_tuple(i++, value);
+		   });
+}
+
 void print_as_hex(std::span<const uint8_t> data) {
-	int i = 0;
-	for (const auto &byte : data) {
+	for (const auto [i, byte] : enumerate(data)) {
 		bool is_end = i == data.size() - 1;
 		if (is_end) {
 			printf("%02x\n", byte);
@@ -52,7 +58,6 @@ void print_as_hex(std::span<const uint8_t> data) {
 				printf("%02x ", byte);
 			}
 		}
-		i += 1;
 	}
 }
 } // namespace app
