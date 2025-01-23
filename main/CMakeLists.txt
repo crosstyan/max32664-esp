@@ -11,4 +11,5 @@ idf_component_register(
         REQUIRES
         esp_timer
         driver
+        max_bl_flash
         )

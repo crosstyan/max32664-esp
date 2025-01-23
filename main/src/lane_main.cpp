@@ -35,7 +35,10 @@ static constexpr auto delay_ms = [](uint32_t ms) {
 };
 } // namespace app
 
-extern "C" void app_main();
+extern "C" [[noreturn]]
+void app_main();
+
+[[noreturn]]
 void app_main() {
 	using namespace app;
 	constexpr auto TAG = "main";
