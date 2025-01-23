@@ -1,4 +1,5 @@
 #include "esp_err.h"
+#include "esp_system.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -9,7 +10,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
-#include <ranges>
 #include <span>
 #include <tuple>
 #include <flash.hpp>
@@ -35,7 +35,7 @@ void IRAM_ATTR delay_us(uint32_t us) {
 	}
 }
 
-static constexpr auto delay_ms = [](uint32_t ms) {
+void delay_ms(uint32_t ms) {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 };
 
@@ -104,12 +104,11 @@ void app_main() {
 
 		return 0;
 	};
-	i2c_detect();
 
 	i2c_device_config_t dev_cfg = {
 		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
 		.device_address  = 0x55,
-		.scl_speed_hz    = 400'000,
+		.scl_speed_hz    = 100'000,
 	};
 	i2c_master_dev_handle_t dev_handle;
 	ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
@@ -131,6 +130,7 @@ void app_main() {
 	gpio_set_level(PIN_RESET, 1);
 	delay_ms(1'500);
 	ESP_LOGI(TAG, "ready");
+	i2c_detect();
 
 	const auto read_command =
 		[dev_handle](uint8_t family_byte, uint8_t index_byte,
@@ -138,13 +138,13 @@ void app_main() {
 					 uint16_t wait_time_ms = 2,
 					 bool is_sleep_on_end  = false) -> esp_err_t {
 		esp_err_t err;
-		gpio_set_level(GPIO_NUM_2, 0);
+		gpio_set_level(PIN_MFIO, 0);
 		delay_us(250);
 		const auto on_end = [is_sleep_on_end] {
 			if (is_sleep_on_end) {
-				gpio_set_level(GPIO_NUM_2, 1);
+				gpio_set_level(PIN_MFIO, 1);
 			} else {
-				gpio_set_level(GPIO_NUM_2, 0);
+				gpio_set_level(PIN_MFIO, 0);
 			}
 		};
 		const std::array<uint8_t, 2> w_data = {family_byte, index_byte};
@@ -159,7 +159,6 @@ void app_main() {
 			on_end();
 			return err;
 		}
-		gpio_set_level(GPIO_NUM_2, 1);
 		on_end();
 		return ESP_OK;
 	};
@@ -173,9 +172,9 @@ void app_main() {
 		esp_err_t err;
 		uint8_t status = 0xff;
 
-		gpio_set_level(GPIO_NUM_2, 0);
+		gpio_set_level(PIN_MFIO, 0);
 		constexpr auto on_end = [] {
-			gpio_set_level(GPIO_NUM_2, 0);
+			gpio_set_level(PIN_MFIO, 0);
 		};
 		delay_us(250);
 
@@ -220,7 +219,7 @@ void app_main() {
 		};
 
 	const auto write_bootloader = [=]() {
-		constexpr auto OK  = 0;
+		constexpr auto OK  = flash::SUCCESS;
 		constexpr auto tag = "bl";
 		{
 			uint8_t out[2]{};
@@ -284,7 +283,7 @@ void app_main() {
 			wr_buf[0] = flash::FMY_BL_W;
 			wr_buf[1] = flash::IDX_BL_W_AUTH;
 			std::ranges::copy(flash::auth_bytes(), wr_buf.data() + 2);
-			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()));
+			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()), 10);
 			if (!status) {
 				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
 				on_ret();
@@ -296,30 +295,25 @@ void app_main() {
 			}
 			ESP_LOGI(tag, "auth written");
 
-
-			delay_ms(500);
-
-			// erase app
-			wr_buf[0] = flash::FMY_BL_W;
-			wr_buf[1] = flash::IDX_BL_W_ERASE_APP;
-			status    = write_command_ext_buf(std::span(wr_buf.data(), 2));
-			if (!status) {
-				ESP_LOGE(tag, "failed to erase app; write_command_ext_buf error=%d", status.error());
-				on_ret();
-				return status.error();
-			} else if (status.value() != OK) {
-				ESP_LOGE(tag, "failed to erase app; status=0x%02x", status.value());
-				on_ret();
-				return ESP_FAIL;
+			const auto erase = [=]() {
+				// erase app
+				wr_buf[0]   = flash::FMY_BL_W;
+				wr_buf[1]   = flash::IDX_BL_W_ERASE_APP;
+				auto status = write_command_ext_buf(std::span(wr_buf.data(), 2), 1'400);
+				if (!status) {
+					ESP_LOGE(tag, "failed to erase app; write_command_ext_buf error=%d", status.error());
+					return status.error();
+				} else if (status.value() != OK) {
+					ESP_LOGE(tag, "failed to erase app; status=0x%02x", status.value());
+					return ESP_FAIL;
+				}
+				return ESP_OK;
+			};
+			constexpr auto RETRY_DELAY_MS = 100;
+			while (erase() != ESP_OK) {
+				delay_ms(RETRY_DELAY_MS);
 			}
-			// 0x05
-			// ERR_BTLDR_TRY_AGAIN. Device is busy. Insert delay and resend the host command.
-			delay_ms(2'000);
 			ESP_LOGI(tag, "app erased");
-			// 0x81
-			// ERR_BTLDR_CHECKSUM. Bootloader checksum error while
-			// decrypting/checking page data. Verify that the keyed .msbl file is compatible
-			// with MAX32664A/B/C/D.
 
 			// send pages
 			wr_buf[0]   = flash::FMY_BL_W;
@@ -333,23 +327,27 @@ void app_main() {
 				printf("last 16 bytes of page %d=", i);
 				print_as_hex(page.subspan(page.size() - 16, 16));
 				std::ranges::copy(page, wr_buf.data() + 2);
-				status = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()));
-				if (!status) {
-					ESP_LOGE(tag, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, status.error(), esp_err_to_name(status.error()));
-					on_ret();
-					return status.error();
-				} else if (status.value() != OK) {
-					ESP_LOGE(tag, "failed to write page %d; status=0x%02x", i, status.value());
-					on_ret();
-					return ESP_FAIL;
+				const auto write_current_page = [=]() {
+					auto status = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()), 680);
+					if (!status) {
+						ESP_LOGE(tag, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, status.error(), esp_err_to_name(status.error()));
+						return status.error();
+					} else if (status.value() != OK) {
+						ESP_LOGE(tag, "failed to write page %d; status=0x%02x", i, status.value());
+						return ESP_FAIL;
+					}
+					ESP_LOGI(tag, "page %d written", i);
+					return ESP_OK;
+				};
+				while (write_current_page() != ESP_OK) {
+					delay_ms(RETRY_DELAY_MS);
 				}
 				ESP_LOGI(tag, "page %d written", i);
-				delay_ms(500);
 			}
 		}
 
 		ESP_LOGI(tag, "bootloader written");
-		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL);
+		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL, 10);
 		if (!status) {
 			ESP_LOGE(tag, "failed to exit bootloader; write_command_byte error=%d", status.error());
 			return status.error();
@@ -360,62 +358,86 @@ void app_main() {
 		return ESP_OK;
 	};
 
-	const auto msbl = flash::msbl();
-	ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
-	printf("auth_bytes(%d)=", flash::auth_bytes().size());
-	print_as_hex(flash::auth_bytes());
-	printf("init_vector(%d)=", flash::init_vector_bytes().size());
-	print_as_hex(flash::init_vector_bytes());
-	ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
 
-
+	flash::DevModeR mode = flash::DEV_MODE_R_APP;
 	{
 	init_retry:
 		uint8_t out[2];
 		auto esp_err = read_command(0x02, 0x00, out);
-		delay_ms(10);
-		if (esp_err != ESP_OK) {
-			ESP_LOGW(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
+		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
+			ESP_LOGW(TAG, "mode=(%d, %d)", out[0], out[1]);
 			goto init_retry;
-		} else {
-			ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
 		}
+		mode = static_cast<flash::DevModeR>(out[1]);
 	}
-	ESP_LOGI(TAG, "try to write bootloader");
-	write_bootloader();
 
+	if (mode == flash::DEV_MODE_R_BL) {
+		ESP_LOGW(TAG, "I'm in bootloader mode; It should not happen normally! I would try to write the application to the device.");
+		const auto msbl = flash::msbl();
+		ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
+		printf("auth_bytes(%d)=", flash::auth_bytes().size());
+		print_as_hex(flash::auth_bytes());
+		printf("init_vector(%d)=", flash::init_vector_bytes().size());
+		print_as_hex(flash::init_vector_bytes());
+		ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
+		write_bootloader();
+		esp_restart();
+	} else {
+		ESP_LOGI(TAG, "app mode");
+	}
 
 	while (true) {
 		esp_err_t esp_err;
 		uint8_t out[2];
-
-	retry:
 		esp_err = read_command(0x02, 0x00, out);
 		delay_ms(10);
 		if (esp_err != ESP_OK) {
-			ESP_LOGW(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
-			goto retry;
+			ESP_LOGW(TAG, "mode=(%d, %d)", out[0], out[1]);
+			continue;
 		} else {
-			ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
+			mode = static_cast<flash::DevModeR>(out[1]);
 		}
 
-		esp_err = read_command(0xFF, 0x00, out);
-		ESP_LOGI(TAG, "out(mcu)=(%d, %d)", out[0], out[1]);
-		delay_ms(10);
+		if (mode == flash::DEV_MODE_R_BL) {
+			esp_err = read_command(0xFF, 0x00, out);
+			ESP_LOGI(TAG, "bl(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
 
-		uint8_t version[4];
-		esp_err = read_command(0x81, 0x00, version);
-		ESP_LOGI(TAG, "out(version)=(%d, %d, %d, %d)", version[0], version[1],
-				 version[2], version[3]);
-		delay_ms(10);
+			uint8_t version[4];
+			esp_err = read_command(0x81, 0x00, version);
+			ESP_LOGI(TAG, "bl(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
+					 version[2], version[3]);
 
-		uint8_t page_size[3];
-		esp_err                   = read_command(0x81, 0x01, page_size);
-		uint16_t &page_size_be    = *reinterpret_cast<uint16_t *>(page_size + 1);
-		uint16_t page_size_native = __ntohs(page_size_be);
-		ESP_LOGI(TAG, "out(page_size)=(%d, %d, %d) size=%d", page_size[0],
-				 page_size[1], page_size[2], page_size_native);
-		delay_ms(10);
+			uint8_t page_size[3];
+			esp_err                   = read_command(0x81, 0x01, page_size);
+			uint16_t &page_size_be    = *reinterpret_cast<uint16_t *>(page_size + 1);
+			uint16_t page_size_native = __ntohs(page_size_be);
+			ESP_LOGI(TAG, "bl(page_size)=(0x%02x, 0x%02x, 0x%02x) size=%d", page_size[0],
+					 page_size[1], page_size[2], page_size_native);
+		} else {
+			esp_err = read_command(0xFF, 0x00, out);
+			ESP_LOGI(TAG, "app(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
+
+			uint8_t version[4];
+			esp_err = read_command(0xFF, 0x03, version);
+			ESP_LOGI(TAG, "app(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
+					 version[2], version[3]);
+
+			uint8_t afe_attr[3];
+			esp_err = read_command(0x42, 0x00, afe_attr);
+			ESP_LOGI(TAG, "app(afe_attr, 86141)=(0x%02x, 0x%02x, 0x%02x)", afe_attr[0], afe_attr[1], afe_attr[2]);
+
+			uint8_t output_mode[2];
+			esp_err = read_command(0x11, 0x00, output_mode);
+			ESP_LOGI(TAG, "app(output_mode)=(0x%02x, 0x%02x)", output_mode[0], output_mode[1]);
+
+			uint8_t hub_status[2];
+			esp_err = read_command(0x00, 0x00, hub_status);
+			ESP_LOGI(TAG, "app(hub_status)=(0x%02x, 0x%02x)", hub_status[0], hub_status[1]);
+
+			uint8_t i2c_addr[2];
+			esp_err = read_command(0x11, 0x03, i2c_addr);
+			ESP_LOGI(TAG, "app(i2c_addr)=(0x%02x, 0x%02x)", i2c_addr[0], i2c_addr[1]);
+		}
 		delay_ms(900);
 	}
 }

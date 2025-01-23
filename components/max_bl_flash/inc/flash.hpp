@@ -38,6 +38,51 @@ enum DevModeR : uint8_t {
 	DEV_MODE_R_BL  = 0x08,
 };
 
+// https://github.com/analogdevicesinc/MAX32630FTHR_msbl_flasher/blob/52cafd7d589991550876703d88ccfc902a4badbd/api.py#L47-L60
+enum StatusCode : uint8_t {
+	// The write transaction was successful.
+	SUCCESS = 0x00,
+	/// Illegal Family Byte and/or Index Byte was used.
+	///
+	/// - Verify that the Family Byte, Index Byte are valid for the host command
+	/// sent.
+	/// - Verify that the latest .msbl is flashed.
+	ERR_UNAVAIL_CMD = 0x01,
+	/// This function is not implemented. Verify that the Index Byte and Write
+	/// Byte(s) are valid for the host command sent.
+	ERR_UNAVAIL_FUNC = 0x02,
+	/// Incorrect number of bytes sent for the requested Family Byte. Verify that
+	/// the correct number of bytes are sent for the host command.
+	ERR_DATA_FORMAT = 0x03,
+	/// Illegal configuration value was attempted to be set.
+	///
+	/// - Verify that the Index Byte is correct for Family Byte 0x44.
+	/// - Verify that the report period is not 0 for host command 0x10 0x02.
+	/// - Verify that the Write byte for host command 0x10 0x03 is in the valid
+	/// range specified.
+	ERR_INPUT_VALUE = 0x04,
+	/// Not used in application mode.
+	ERR_INVALID_MODE = 0x05,
+	/// General error while receiving/flashing a page during the bootloader sequence. Not used.
+	ERR_BTLDR_GENERAL = 0x80,
+	/// Bootloader checksum error while decrypting/checking page data. Verify
+	/// that the keyed .msbl file is compatible with MAX32664A/B/C/D.
+	ERR_BTLDR_CHECKSUM = 0x81,
+	/// Bootloader authorization error. Verify that the keyed .msbl file is compatible with MAX32664A/B/C/D.
+	ERR_BTLDR_AUTH = 0x82,
+	/// Bootloader detected that the application is not valid.
+	ERR_BTLDR_INVALID_APP = 0x83,
+	/// Device is busy, try again. Increase the delay before the command and increase the CMD_DELAY.
+	ERR_TRY_AGAIN = 0xFE,
+	/// Unknown Error. Verify that the communications to the AFE/KX-122 are
+	/// correct by reading the PART_ID/WHO_AM_I register. For MAX32664B/C, the
+	/// MAX32664 is in deep sleep unless the host sets the MFIO pin low 250μs
+	/// before and during the I2C communications.
+	ERR_UNKNOWN = 0xFF,
+	/// Device is busy. Insert delay and resend the host command
+	ERR_BTLDR_TRY_AGAIN = 0x05,
+};
+
 const std::span<const uint8_t>
 msbl();
 const std::span<const uint8_t> auth_bytes();
