@@ -10,6 +10,7 @@
 #include <span>
 #include <tuple>
 
+namespace app {
 void IRAM_ATTR delay_us(uint32_t us) {
   constexpr auto micros = [] { return esp_timer_get_time(); };
   constexpr auto nop = [] { __asm__ __volatile__("nop"); };
@@ -28,16 +29,16 @@ void IRAM_ATTR delay_us(uint32_t us) {
   }
 }
 
+static constexpr auto delay_ms = [](uint32_t ms) {
+  vTaskDelay(ms / portTICK_PERIOD_MS);
+};
+} // namespace app
+
 extern "C" void app_main();
 void app_main() {
+  using namespace app;
   constexpr auto TAG = "main";
-  // Max32664 max;
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  // Wire.begin( I2C_SDA_PIN, I2C_SCL_PIN,I2C_FREQ_HZ);
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  // Check that communication was successful, not that the IC is outputting
-  // correct format.
-  // max.sensor_init(MODE_ONE);
+  delay_ms(200);
 
   i2c_master_bus_config_t i2c_mst_config = {
       .i2c_port = I2C_NUM_0,
@@ -59,100 +60,16 @@ void app_main() {
   i2c_master_dev_handle_t dev_handle;
   ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
-  //
-  // static constexpr auto i2c_init = [] {
-  //
-  //   constexpr auto I2C_MASTER_CHAN_NUM = I2C_NUM_0;
-  //   // 400kHz fast mode
-  //   // See 9.5.1.3 @ADS1115 datasheet
-  //   constexpr auto I2C_MASTER_FREQ_HZ1        = 400'000;
-  //   constexpr auto I2C_MASTER_RX_BUF_DISABLE = 0;
-  //   constexpr auto I2C_MASTER_TX_BUF_DISABLE = 0;
-  //       constexpr auto master_conf = i2c_config_t{
-  //         .mode          = I2C_MODE_MASTER,
-  //         .sda_io_num    = I2C_MASTER_SDA,
-  //         .scl_io_num    = I2C_MASTER_SCL,
-  //         .sda_pullup_en = GPIO_PULLUP_ENABLE,
-  //         .scl_pullup_en = GPIO_PULLUP_ENABLE,
-  //         .master        = {
-  //           .clk_speed = I2C_MASTER_FREQ_HZ1,
-  //          },
-  //  };
-  //   auto err = i2c_param_config(I2C_MASTER_CHAN_NUM, &master_conf);
-  //   if (err != ESP_OK) {
-  //     return err;
-  //   }
-  //   err = i2c_driver_install(I2C_MASTER_CHAN_NUM, master_conf.mode,
-  //   I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0); if (err !=
-  //   ESP_OK) {
-  //     return err;
-  //   }
-  //   return err;
-  // };
-  // auto i2c_ = i2c_init();
-  // if (not i2c_) {
-  //   ESP_LOGE("main", "Failed to initialize I2C: %s", esp_err_to_name(i2c_));
-  // }
-  // i2c_port_t i2c_num    = I2C_NUM_0;
-  // const auto i2c_detect = [i2c_num]() {
-  //   constexpr auto WRITE_BIT     = 0;
-  //   constexpr auto READ_BIT      = 1;
-  //   constexpr auto ACK_CHECK_EN  = 0x1;
-  //   constexpr auto ACK_CHECK_DIS = 0x0;
-  //   constexpr auto ACK_VAL       = 0x0;
-  //   constexpr auto NACK_VAL      = 0x1;
-  //   uint8_t address;
-  //   printf("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\r\n");
-  //   for (int i = 0; i < 128; i += 16) {
-  //     printf("%02x: ", i);
-  //     for (int j = 0; j < 16; j++) {
-  //       fflush(stdout);
-  //       address              = i + j;
-  //       i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  //       i2c_master_start(cmd);
-  //       i2c_master_write_byte(cmd, (address << 1) | WRITE_BIT, ACK_CHECK_EN);
-  //       i2c_master_stop(cmd);
-  //       auto ret = i2c_master_cmd_begin(i2c_num, cmd, pdMS_TO_TICKS(50));
-  //       i2c_cmd_link_delete(cmd);
-  //       if (ret == ESP_OK) {
-  //         printf("%02x ", address);
-  //       } else if (ret == ESP_ERR_TIMEOUT) {
-  //         printf("UU ");
-  //       } else {
-  //         printf("-- ");
-  //       }
-  //     }
-  //     printf("\r\n");
-  //   }
-  // };
-  //   const auto i2c_general_call = [i2c_num] {
-  //     uint8_t buf[1] = {0x06};
-  //     return i2c_master_write_to_device(i2c_num, 0, buf, 1,
-  //     I2C_MASTER_TIMEOUT_MS);
-  // };
-  // i2c_detect();
-  // i2c_general_call();
   constexpr auto PIN_RESET = GPIO_NUM_22;
   constexpr auto PIN_MFIO = GPIO_NUM_2;
 
-  // zero-initialize the config structure.
   gpio_config_t io_conf = {};
-  // disable interrupt
   io_conf.intr_type = GPIO_INTR_DISABLE;
-  // set as output mode
   io_conf.mode = GPIO_MODE_OUTPUT;
-  // bit mask of the pins that you want to set,e.g.GPIO18/19
   io_conf.pin_bit_mask = PIN_RESET | PIN_MFIO;
-  // disable pull-down mode
   io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  // disable pull-up mode
   io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-  // configure GPIO with the given settings
   gpio_config(&io_conf);
-
-  static constexpr auto delay_ms = [](uint32_t ms) {
-    vTaskDelay(ms / portTICK_PERIOD_MS);
-  };
 
   gpio_set_level(PIN_RESET, 0);
   gpio_set_level(PIN_MFIO, 1);
@@ -279,10 +196,6 @@ void app_main() {
     ESP_LOGI(TAG, "out(page_size)=(%d, %d, %d) size=%d", page_size[0],
              page_size[1], page_size[2], page_size_native);
     delay_ms(10);
-
-    // auto [tmp_esp_err, status] = write_register_byte(0x01, 0x00, 0x08, 5);
-    // esp_err = tmp_esp_err;
-    // ESP_LOGI(TAG, "out(w1)=(%d, %d)", esp_err, status);
     delay_ms(900);
   }
 }
