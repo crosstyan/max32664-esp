@@ -74,7 +74,7 @@ void app_main() {
 		.sda_io_num        = GPIO_NUM_10,
 		.scl_io_num        = GPIO_NUM_11,
 		.clk_source        = I2C_CLK_SRC_DEFAULT,
-		.glitch_ignore_cnt = 14,
+		.glitch_ignore_cnt = 7,
 		.flags             = {.enable_internal_pullup = true},
 	};
 	i2c_master_bus_handle_t bus_handle;
@@ -109,7 +109,7 @@ void app_main() {
 	i2c_device_config_t dev_cfg = {
 		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
 		.device_address  = 0x55,
-		.scl_speed_hz    = 800'000,
+		.scl_speed_hz    = 400'000,
 	};
 	i2c_master_dev_handle_t dev_handle;
 	ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
@@ -135,12 +135,17 @@ void app_main() {
 	const auto read_command =
 		[dev_handle](uint8_t family_byte, uint8_t index_byte,
 					 std::span<uint8_t> out,
-					 uint16_t wait_time_ms = 2) -> esp_err_t {
+					 uint16_t wait_time_ms = 2,
+					 bool is_sleep_on_end  = false) -> esp_err_t {
 		esp_err_t err;
 		gpio_set_level(GPIO_NUM_2, 0);
 		delay_us(250);
-		constexpr auto on_end = [] {
-			gpio_set_level(GPIO_NUM_2, 0);
+		const auto on_end = [is_sleep_on_end] {
+			if (is_sleep_on_end) {
+				gpio_set_level(GPIO_NUM_2, 1);
+			} else {
+				gpio_set_level(GPIO_NUM_2, 0);
+			}
 		};
 		const std::array<uint8_t, 2> w_data = {family_byte, index_byte};
 		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), -1);
@@ -190,6 +195,7 @@ void app_main() {
 	};
 
 	// write register with a stack-allocated buffer of size N
+	// TODO: whether put device to sleep
 	const auto write_command =
 		[write_command_ext_buf]<uint16_t N = 18>(
 			uint8_t family_byte, uint8_t index_byte, std::span<const uint8_t> in,
@@ -216,12 +222,26 @@ void app_main() {
 	const auto write_bootloader = [=]() {
 		constexpr auto OK  = 0;
 		constexpr auto tag = "bl";
-		uint8_t out[2]{};
-		esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::FMY_DEV_MODE_R, out);
-		ESP_ERROR_CHECK(err);
-		if (out[0] != OK || out[1] != flash::DEV_MODE_R_BL) {
-			ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(%d, %d)", out[0], out[1]);
-			return ESP_FAIL;
+		{
+			uint8_t out[2]{};
+			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::FMY_DEV_MODE_R, out);
+			ESP_ERROR_CHECK(err);
+			if (out[0] != OK || out[1] != flash::DEV_MODE_R_BL) {
+				ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
+				return ESP_FAIL;
+			}
+		}
+		{
+			// get ID and MCU type
+			uint8_t out[2]{};
+			esp_err_t err = read_command(0xff, 0x00, out);
+			ESP_ERROR_CHECK(err);
+			if (out[0] != OK) {
+				ESP_LOGE(tag, "can't get MCU type; out(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
+				return ESP_FAIL;
+			} else {
+				ESP_LOGI(tag, "mcu type=0x%02x", out[1]);
+			}
 		}
 		{
 			const auto num_of_pages = flash::number_of_pages();
@@ -235,7 +255,7 @@ void app_main() {
 				ESP_LOGE(tag, "failed to write number of pages; status=%d", status.value());
 				return ESP_FAIL;
 			}
-			ESP_LOGI(tag, "number of pages written");
+			ESP_LOGI(tag, "number of pages %d written", num_of_pages);
 
 			// use heap to avoid stack overflow
 			uint8_t *wr_buf_heap = new uint8_t[2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE];
@@ -243,21 +263,6 @@ void app_main() {
 			const auto on_ret    = [wr_buf_heap] {
                 delete[] wr_buf_heap;
 			};
-			wr_buf[0] = flash::FMY_BL_W;
-			wr_buf[1] = flash::IDX_BL_W_AUTH;
-			std::ranges::copy(flash::auth_bytes(), wr_buf.data() + 2);
-			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()));
-			if (!status) {
-				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
-				on_ret();
-				return status.error();
-			} else if (status.value() != OK) {
-				ESP_LOGE(tag, "failed to write auth; status=%d", status.value());
-				on_ret();
-				return ESP_FAIL;
-			}
-			ESP_LOGI(tag, "auth written");
-
 
 			// write nonce
 			wr_buf[0] = flash::FMY_BL_W;
@@ -274,6 +279,23 @@ void app_main() {
 				return ESP_FAIL;
 			}
 			ESP_LOGI(tag, "nonce written");
+
+			// write auth
+			wr_buf[0] = flash::FMY_BL_W;
+			wr_buf[1] = flash::IDX_BL_W_AUTH;
+			std::ranges::copy(flash::auth_bytes(), wr_buf.data() + 2);
+			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()));
+			if (!status) {
+				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
+				on_ret();
+				return status.error();
+			} else if (status.value() != OK) {
+				ESP_LOGE(tag, "failed to write auth; status=%d", status.value());
+				on_ret();
+				return ESP_FAIL;
+			}
+			ESP_LOGI(tag, "auth written");
+
 
 			delay_ms(500);
 
@@ -292,7 +314,7 @@ void app_main() {
 			}
 			// 0x05
 			// ERR_BTLDR_TRY_AGAIN. Device is busy. Insert delay and resend the host command.
-			delay_ms(3'000);
+			delay_ms(2'000);
 			ESP_LOGI(tag, "app erased");
 			// 0x81
 			// ERR_BTLDR_CHECKSUM. Bootloader checksum error while
@@ -304,8 +326,12 @@ void app_main() {
 			wr_buf[1]   = flash::IDX_BL_W_SEND_PAGE;
 			auto offset = flash::APP_START_OFFSET;
 			for (uint16_t i = 0; i < num_of_pages; i++) {
-				auto page = flash::msbl().subspan(offset + i * (flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE),
-												  flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+				const auto page = flash::msbl().subspan(offset + i * (flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE),
+														flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+				printf("first 16 bytes of page %d=", i);
+				print_as_hex(page.subspan(0, 16));
+				printf("last 16 bytes of page %d=", i);
+				print_as_hex(page.subspan(page.size() - 16, 16));
 				std::ranges::copy(page, wr_buf.data() + 2);
 				status = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()));
 				if (!status) {
@@ -355,7 +381,7 @@ void app_main() {
 			ESP_LOGI(TAG, "out(mode)=(%d, %d)", out[0], out[1]);
 		}
 	}
-
+	ESP_LOGI(TAG, "try to write bootloader");
 	write_bootloader();
 
 
