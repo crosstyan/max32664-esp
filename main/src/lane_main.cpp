@@ -40,13 +40,13 @@ void delay_ms(uint32_t ms) {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 };
 
-auto enumerate(const auto &data) {
-	return data | std::views::transform([i = 0](const auto &value) mutable {
-			   return std::make_tuple(i++, value);
-		   });
-}
 
 void print_as_hex(std::span<const uint8_t> data) {
+	const auto enumerate = [](const auto &data) {
+		return data | std::views::transform([i = 0](const auto &value) mutable {
+				   return std::make_tuple(i++, value);
+			   });
+	};
 	for (const auto [i, byte] : enumerate(data)) {
 		bool is_end = i == data.size() - 1;
 		if (is_end) {
