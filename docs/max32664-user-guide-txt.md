@@ -1,8 +1,4 @@
-<!-- image -->
-
 ## MAX32664 User Guide
-
-UG6806; Rev 3; 8/20
 
 ## Abstract
 
@@ -551,7 +547,7 @@ Table 6. MAX32664 I2C Message Protocol Definitions
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the algorithm  run mode.  (MAX32664C)                           | 0x51                   | 0x07                   | 0x0A        | 0x00: Continuous HRM,  continuous SpO 2   0x01: Continuous HRM, one- shot SpO 2   0x02: Continuous HRM  0x03: Sampled HRM  0x04: Sampled HRM, one- shot SpO 2   0x05: Activity tracking only  0x06: SpO 2  calibration  0x00: Disabled |
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the AEC  algorithm enable.  (MAX32664C)                         | 0x51                   | 0x07                   | 0x0B        | 0x01: Enabled                                                                                                                                                                                                                          |
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the SCD  algorithm enable.                                      | 0x51                   | 0x07                   | 0x0C        | 0x00: Disabled  0x01: Enabled                                                                                                                                                                                                          |
-| Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the target PD  current period  (period to update  the target PD | 0x51                   | 0x07                   | 0x0D        | Target PD current period (16- bit unsigned integer)                                                                                                                                                                                    |
+| Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the target PD  current period  (period to update the target PD current with the AEC formula). | 0x51                   | 0x07                   | 0x0D        | Target PD current period (16-bit unsigned integer)                                                                                                                                                                                    |
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the motion  magnitude  threshold.  (MAX32664C)                  | 0x51                   | 0x07                   | 0x0E        | Motion magnitude threshold  (16-bit unsigned integer,  0.001g)                                                                                                                                                                         |
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the minimum  PD current setting.                                | 0x51                   | 0x07                   | 0x0F        | Minimum PD current setting  (16-bit unsigned integer,  0.1mA)                                                                                                                                                                          |
 | Algorithm  Configuration  Read | Wearable Algorithm  Suite  (WHRM+WSpO2):  Read the initial PD  current setting.  (MAX32664C)                   | 0x51                   | 0x07                   | 0x10        | Initial PD current setting (16- bit unsigned integer, 0.1mA)                                                                                                                                                                           |
@@ -654,15 +650,28 @@ The  MAX32664  is  pre-programmed  with  bootloader  firmware  which  accepts  i
 
 To program the MAX32664 .msbl, the host microprocessor can implement the software to flash the .msbl file or the MAX32630FTHR can be used as a programmer. To use the MAX32630FTHR as a programmer, the following four MAX32630FTHR pins should be connected to the MAX32664
 
-pins: P3.4 to SLAVE\_SDA, P3.5 to SLAVE\_SCL, P5.4 to MFIO, P5.6 to RSTN. The programming instructions and software needed are available in the HR, SpO 2  software download package on the MAXREFDES220 site.
+pins: P3.4 to `SLAVE_SDA`, P3.5 to `SLAVE_SCL`, P5.4 to `MFIO`, P5.6 to `RSTN`.
+The programming instructions and software needed are available in the HR, SpO2
+software download package on the MAXREFDES220 site.
 
 Figure 11. Using the MAX32630FTHR to flash the application .msbl to the MAX32664.
 
 <!-- image -->
 
-Sample host code to flash the .msbl can be found in the bootloader download package at the MAX32660 website. Another example is located at this Mbed website: Host\_Software\_MAX32664GWEC\_SpO2 (the host code that interfaces with the MAX32664 on the mbed site is dated. For the latest sample host code to interface with the MAX32664, use the compatible version of sample host code available in the download package on the MAX32664 website). The source code to the python .msbl download file is in the download package at the MAXREFDES220 website. The following constants in the sample .msbl code should be updated to reflect the latest CMD\_DELAY definitions:
+Sample host code to flash the .msbl can be found in the bootloader download
+package at the MAX32660 website. Another example is located at this Mbed
+website: `Host_Software_MAX32664GWEC_SpO2` (the host code that interfaces with
+the MAX32664 on the mbed site is dated. For the latest sample host code to
+interface with the MAX32664, use the compatible version of sample host code
+available in the download package on the MAX32664 website). The source code to
+the python .msbl download file is in the download package at the MAXREFDES220
+website. The following constants in the sample .msbl code should be updated to
+reflect the latest `CMD_DELAY` definitions:
 
-#define SS\_BOOTLOADER\_ERASE\_DELAY 1400 #define PAGE\_WRITE\_DELAY\_MS 680
+```c
+#define SS_BOOTLOADER_ERASE_DELAY 1400 
+#define PAGE_WRITE_DELAY_MS 680
+```
 
 Table  9 is a  capture  of  the  I2C  commands  that  are  necessary  to  flash  the  application algorithm/firmware to the MAX32664.
 
@@ -769,56 +778,3 @@ Table 11. MAX32664A/B/C/D/MAXM86146 Pre-Programmed .msbl Version
 | Application mode                                                                                           | Application mode |                                                                                                                                   |
 | Bootloader or Application Status                                                                           | 0XAA 0x02 0x00   | Send  the  read  mode  command.  Response is 0xAB 0x00 0x08 if in  bootloader  mode  or  0xAB  0x00  0x00 if in application mode. |
 | Heartbeat  (signal  to  signify  that    the  sensor  hub  firmware  is  not  stuckl) for Application Mode |                  | Not implemented.                                                                                                                  |
-
-## Default Application .msbl Versions Pre-Programmed on the MAX32664A/B/C/D
-
-The  MAX32664A/B/C/D  are  pre-programmed  with  the  bootloader  and  the  application  .msbl application/sensor hub version listed in Table 11. The pre-programmed application .msbl versions are not updated by Maxim. The pre-programmed parts may not be programmed with the latest version of the .msbl application. It is recommended that the sensor hub be updated with the latest application .msbl available on the Maxim Integrated website in order to be compatible with the latest sensor hub documentation.
-
-| MAXIM PART   | PRE-PROGRAMMED .msbl  APPLICATION/SENSOR HUB VERSION   |
-|--------------|--------------------------------------------------------|
-| MAX32664A    | Version 1.9.1  (deprecated)                            |
-| MAX32664B    | Version 20.1.2  (deprecated)                           |
-| MAX32664C    | Version 30.2.2  (deprecated)                           |
-| MAX32664D    | Version 40.2.2  (deprecated)                           |
-| MAXM86146    | Application not pre-programmed.                        |
-
-## MAX32664 Processing Capabilities
-
-The MAX32664 IC hardware is the same as the MAX32660.
-
-- 1. MIPS: Arm Cortex-M4 with FPU: 1.27  Dhrystone MIPS/MHz
-- 2. RAM: 96kB SRAM
-- 3. Flash: 256kB Flash Memory
-- 4. CPU Frequency: 96MHz
-
-## References
-
-MAX32664  website:  MAX32664  user  guides;  C-keyed  .msbl  for  MAX32664A,  MAX32664D; sample host code: MAX32664 Design Resources Website.
-
-Application Note 7148, protocol definition between sample host (MAX32630) and PC UART/BLE: Interface Guide for MAX32664 Sensor Hub-Based Reference Design Platforms
-
-Frequently Asked Questions: Maxim Support Center
-
-MAXREFDES101# hardware, software files: MAXREFDES101#: Health Sensor Platform 2.0
-
-MAXREFDES103# hardware, software files: MAXREFDES103#: Wrist-Based SpO2, HR, and HRV Health Sensor Platform
-
-MAXREFDES220# hardware, software files: MAXREFDES220#: Finger Heart Rate and Pulse Oximeter Smart Sensor with Digital Signal Processing
-
-## Trademarks
-
-Android is a registered trademark of Google Inc.
-
-Arm and Cortex are registered trademarks of Arm Limited.
-
-Bluetooth is a registered trademark owned by Bluetooth SIG, Inc. and any use of such marks by Maxim is under license.
-
-## Revision History
-
-|   REVISION  NUMBER | REVISION  DATE   | DESCRIPTION                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | PAGES  CHANGED                                        |
-|--------------------|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
-|                  0 | 01/19            | Initial release                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | -                                                     |
-|                  1 | 06/19            | Added the MAX32664B/C/D application firmware  descriptions, Table 4 for additional GPIOs for the  MAXREFDES101#, and 0x11 to the commands. Changed  0x14 0x04 to 0x14 0x00. Updated the 0x44 0x04 command  and Sequence of Commands for the external host. Added  PD1, PD2 to 0x51/0 0x05 0x09, and additional modes to 0x52  0x02 and 0x52 0x04. Labeled commands in Table 6 and  Table 8 as MAX32664A/B/C/D. Added mode 2 for MaximFast  in Table 8. Updated Table 9. Added Table 12, Table 13, and  Table 14 for annotated I2C traces for MAX32664C and  MAX32664D. Corrected the timing for CMD\_DELAY and the  application response time to I2C commands. Added  descriptions for the Wearable Algorithm Suite  (WHRM+WSpO2) and updated MFIO for WHRM+WSpO2.  Added sensor configuration, MAXM86161 calibration, Table  17 and mode 2 for the WHRM+WSpO 2  algorithm. Updated  host command 0x51/0 0x07 0x17/8 for LED/PD configuration  and the TRY\_AGAIN values in Table 5. | 1-72                                                  |
-|                  2 | 11/19            | MAX32664B WHRM v20.2.x+ uses a polling method for the  MFIO pin. Updated section MAX32664 Bootloader Mode.  Updated Table 6 by adding shutdown command to Device  Mode (0x01 0x00 0x01), removing the WHRM command  (0x50) and WSpO 2  command (0x51), adding commands to  change and read the I2C address (0x10/11 0x03), set and  read the sensor hub counter (0x10/11 0x04), and a single  command to enable multiple sensors (0x44 0xFF), reversing  the systolic command (0x50 0x04 0x01) and the diastolic  command (0x50 0x04 0x02), updating 0x50/51 0x07 0x017  for which slots and PDs are used, updating 0x50/51 0x07  0x018 for which LEDs and PDs are used for IR and red LEDs,  and adding 0x50/51 0x07 0x18 for which slots are used for  the firing of each LED. Removed Table 8 and Table 10  through Table 14. Updated section MAX32664 I2C Annotated  Application Mode Example and Output FIFO Format. Updated  Table 10 by adding the Shutdown command.            | 7, 12-13,   19-21, 26,   32-33, 38-39,  46-47, 57, 63 |
-
-©2020  by  Maxim  Integrated  Products,  Inc.  All  rights  reserved.  Information  in  this  publication  concerning  the  devices, applications, or technology described is intended to suggest possible uses and may be superseded. MAXIM INTEGRATED PRODUCTS, INC. DOES NOT ASSUME LIABILITY FOR OR PROVIDE A REPRESENTATION OF ACCURACY OF THE INFORMATION, DEVICES, OR TECHNOLOGY DESCRIBED IN THIS DOCUMENT. MAXIM ALSO DOES NOT ASSUME LIABILITY FOR INTELLECTUAL PROPERTY INFRINGEMENT RELATED IN ANY MANNER TO USE OF INFORMATION, DEVICES, OR TECHNOLOGY DESCRIBED HEREIN OR OTHERWISE. The information contained within this document has been verified according to the general principles of electrical and mechanical engineering or registered trademarks of Maxim Integrated Product
