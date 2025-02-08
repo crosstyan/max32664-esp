@@ -62,8 +62,8 @@ void print_as_hex(std::span<const uint8_t> data) {
 }
 } // namespace app
 
-
-constexpr auto DEFAULT_I2C_TIMEOUT_MS = 50;
+// Wait timeout, in ms. Note: -1 means wait forever.
+constexpr auto DEFAULT_I2C_TIMEOUT_MS = 1'000;
 extern "C" [[noreturn]]
 void app_main();
 
@@ -83,6 +83,7 @@ void app_main() {
 		.flags             = {.enable_internal_pullup = true},
 	};
 	i2c_master_bus_handle_t bus_handle;
+
 	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 
 	// https://github.com/espressif/esp-idf/blob/fb25eb02ebcf78a78b4c34a839238a4a56accec7/examples/peripherals/i2c/i2c_tools/main/cmd_i2ctools.c#L109
@@ -153,13 +154,13 @@ void app_main() {
 			}
 		};
 		const std::array<uint8_t, 2> w_data = {family_byte, index_byte};
-		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), -1);
+		err                                 = i2c_master_transmit(dev_handle, w_data.data(), w_data.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			on_end();
 			return err;
 		}
 		delay_ms(wait_time_ms);
-		err = i2c_master_receive(dev_handle, out.data(), out.size(), -1);
+		err = i2c_master_receive(dev_handle, out.data(), out.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			on_end();
 			return err;
@@ -172,16 +173,21 @@ void app_main() {
 	const auto write_command_ext_buf =
 		[dev_handle](
 			std::span<const uint8_t> in,
-			uint16_t wait_time_ms = 2) -> expected<uint8_t, esp_err_t> {
+			uint16_t wait_time_ms = 2,
+			bool is_sleep_on_end  = false) -> expected<uint8_t, esp_err_t> {
 		using ue = unexpected<esp_err_t>;
 		esp_err_t err;
 		uint8_t status = 0xff;
 
 		gpio_set_level(PIN_MFIO, 0);
-		constexpr auto on_end = [] {
-			gpio_set_level(PIN_MFIO, 0);
+		delay_ms(1);
+		const auto on_end = [is_sleep_on_end] {
+			if (is_sleep_on_end) {
+				gpio_set_level(PIN_MFIO, 1);
+			} else {
+				gpio_set_level(PIN_MFIO, 0);
+			}
 		};
-		delay_us(250);
 
 		err = i2c_master_transmit(dev_handle, in.data(), in.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
@@ -198,29 +204,13 @@ void app_main() {
 		return status;
 	};
 
-	// write register with a stack-allocated buffer of size N
-	// TODO: whether put device to sleep
-	const auto write_command =
-		[write_command_ext_buf]<uint16_t N = 18>(
-			uint8_t family_byte, uint8_t index_byte, std::span<const uint8_t> in,
-			uint16_t wait_time_ms = 2) -> std::tuple<esp_err_t, uint8_t> {
-		uint8_t status            = 0xff;
-		constexpr auto MAX_IN_BUF = N - 2;
-		if (in.size() > MAX_IN_BUF) {
-			return {ESP_ERR_NO_MEM, status};
-		}
-		std::array<uint8_t, N> w_data = {family_byte, index_byte};
-		std::ranges::copy(in, w_data.begin() + 2);
-		auto in_buf = std::span(w_data.data(), in.size() + 2);
-		return write_command_ext_buf(in_buf, wait_time_ms);
-	};
-
 	// write register with a single byte of data
 	const auto write_command_byte =
 		[write_command_ext_buf](uint8_t family_byte, uint8_t index_byte, uint8_t data,
-								uint16_t wait_time_ms = 2) {
+								uint16_t wait_time_ms = 2,
+								bool is_sleep_on_end  = false) {
 			uint8_t in[3] = {family_byte, index_byte, data};
-			return write_command_ext_buf(in, wait_time_ms);
+			return write_command_ext_buf(in, wait_time_ms, is_sleep_on_end);
 		};
 
 	const auto write_bootloader = [=]() {
@@ -228,9 +218,9 @@ void app_main() {
 		constexpr auto tag = "bl";
 		{
 			uint8_t out[2]{};
-			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::FMY_DEV_MODE_R, out);
+			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::FMY_DEV_MODE_R, out, 10);
 			ESP_ERROR_CHECK(err);
-			if (out[0] != OK || out[1] != flash::DEV_MODE_R_BL) {
+			if (auto status = out[0]; out[1] != flash::DEV_MODE_R_BL || status != OK) {
 				ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
 				return ESP_FAIL;
 			}
@@ -325,20 +315,20 @@ void app_main() {
 			wr_buf[1]       = flash::IDX_BL_W_SEND_PAGE;
 			uint32_t offset = flash::APP_START_OFFSET;
 			for (uint16_t i = 0; i < num_of_pages; i++) {
-				const auto page = flash::msbl().subspan(offset + i * (flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE),
-														flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+				constexpr auto PAGE_SIZE = flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE;
+				const auto page          = flash::msbl().subspan(offset + i * PAGE_SIZE, PAGE_SIZE);
 				printf("first 16 bytes of page %d=", i);
 				print_as_hex(page.subspan(0, 16));
 				printf("last 16 bytes of page %d=", i);
 				print_as_hex(page.subspan(page.size() - 16, 16));
 				std::ranges::copy(page, wr_buf.data() + 2);
 				const auto write_current_page = [=]() {
-					auto status = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()), 680);
-					if (!status) {
-						ESP_LOGE(tag, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, status.error(), esp_err_to_name(status.error()));
-						return status.error();
-					} else if (status.value() != OK) {
-						ESP_LOGE(tag, "failed to write page %d; status=0x%02x", i, status.value());
+					auto e = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()), 680);
+					if (!e) {
+						ESP_LOGE(tag, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, e.error(), esp_err_to_name(e.error()));
+						return e.error();
+					} else if (e.value() != OK) {
+						ESP_LOGE(tag, "failed to write page %d; status=0x%02x", i, e.value());
 						return ESP_FAIL;
 					}
 					ESP_LOGI(tag, "page %d written", i);
@@ -372,23 +362,26 @@ init_retry:
 		auto esp_err = read_command(0x02, 0x00, out);
 		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
 			ESP_LOGW(TAG, "err='%s'(%d), mode=(%d, %d)", esp_err_to_name(esp_err), status, out[0], out[1]);
-			delay_ms(100);
+			delay_ms(1'000);
 			goto init_retry;
 		}
 		mode = static_cast<flash::DevModeR>(out[1]);
 	}
 
-	const auto reset_to_bootloader_by_pin = [] {
+	const auto enter_bootloader_by_pin = [] {
 		// set RSTN low
 		gpio_set_level(PIN_RESET, 0);
 		// While RSTN is low, set the MFIO pin to low.
 		gpio_set_level(PIN_MFIO, 0);
 		// The MFIO pin should be set to low at least 1ms before the RSTN pin is set to high.
 		// After the 10ms has elapsed, set the RSTN pin to high.
-		delay_ms(10);
+		delay_ms(20);
 		gpio_set_level(PIN_RESET, 1);
 		// After an additional 50ms has elapsed, the sensor hub is in Bootloader mode.
-		delay_ms(100);
+		delay_ms(60);
+	};
+	const auto enter_bootloader_by_command = [=]() {
+		return write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_ENTER_BL, 50);
 	};
 
 	if (mode == flash::DEV_MODE_R_BL) {
@@ -400,7 +393,11 @@ init_retry:
 		printf("init_vector(%d)=", flash::init_vector_bytes().size());
 		print_as_hex(flash::init_vector_bytes());
 		ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
-		write_bootloader();
+		auto ok = write_bootloader();
+		while (ok != ESP_OK) {
+			delay_ms(1'000);
+			ok = write_bootloader();
+		}
 		esp_restart();
 	} else {
 		esp_err_t esp_err;
@@ -419,12 +416,15 @@ init_retry:
 		}
 		auto v = std::span(version + 1, 3);
 		if (std::equal(v.begin(), v.end(), EXPECTED_VERSION_TUPLE.begin())) {
-			ESP_LOGI(TAG, "version=%d.%d.%d", version[0], version[1], version[2]);
+			ESP_LOGI(TAG, "version=%d.%d.%d", v[0], v[1], v[2]);
 		} else {
 			ESP_LOGW(TAG, "unexpected version; expected=%d.%d.%d, actual=%d.%d.%d",
-					 EXPECTED_VERSION_TUPLE[0], EXPECTED_VERSION_TUPLE[1], EXPECTED_VERSION_TUPLE[2], version[0], version[1], version[2]);
+					 EXPECTED_VERSION_TUPLE[0], EXPECTED_VERSION_TUPLE[1], EXPECTED_VERSION_TUPLE[2], v[0], v[1], v[2]);
 			ESP_LOGI(TAG, "enter bootloader mode and rewrite the application");
-			reset_to_bootloader_by_pin();
+			enter_bootloader_by_pin();
+			delay_ms(500);
+			enter_bootloader_by_command();
+			delay_ms(500);
 			goto init_retry;
 		}
 	}
