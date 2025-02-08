@@ -85,6 +85,7 @@ void app_main() {
 	i2c_master_bus_handle_t bus_handle;
 
 	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+	ESP_ERROR_CHECK(i2c_master_bus_reset(bus_handle));
 
 	// https://github.com/espressif/esp-idf/blob/fb25eb02ebcf78a78b4c34a839238a4a56accec7/examples/peripherals/i2c/i2c_tools/main/cmd_i2ctools.c#L109
 	const auto i2c_detect = [bus_handle]() {
@@ -218,7 +219,7 @@ void app_main() {
 		constexpr auto tag = "bl";
 		{
 			uint8_t out[2]{};
-			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::FMY_DEV_MODE_R, out, 10);
+			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::IDX_DEV_MODE_R, out, 10);
 			ESP_ERROR_CHECK(err);
 			if (auto status = out[0]; out[1] != flash::DEV_MODE_R_BL || status != OK) {
 				ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
@@ -308,7 +309,9 @@ void app_main() {
 			while (erase() != ESP_OK) {
 				delay_ms(RETRY_DELAY_MS);
 			}
+
 			ESP_LOGI(tag, "app erased");
+			delay_ms(500);
 
 			// send pages
 			wr_buf[0]       = flash::FMY_BL_W;
