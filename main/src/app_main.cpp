@@ -116,7 +116,7 @@ void app_main() {
 	i2c_device_config_t dev_cfg = {
 		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
 		.device_address  = 0x55,
-		.scl_speed_hz    = 100'000,
+		.scl_speed_hz    = 400'000,
 	};
 	i2c_master_dev_handle_t dev_handle;
 	ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
