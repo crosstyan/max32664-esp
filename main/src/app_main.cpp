@@ -338,7 +338,7 @@ void app_main() {
 		}
 
 		ESP_LOGI(tag, "bootloader written");
-		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL, 10);
+		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL, 50);
 		if (!status) {
 			ESP_LOGE(tag, "failed to exit bootloader; write_command_byte error=%d", status.error());
 			return status.error();
