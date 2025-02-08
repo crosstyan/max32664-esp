@@ -196,14 +196,14 @@ Table 2. RSTN Pin and GPIOs Pins
 
 To achieve a lower power profile, the following  versions  of  the  .msbl  algorithm  use  a  polling method instead of the MFIO pin as an interrupt to the host:
 
-- · MAX32664B WHRM v20.2.0+
-- · MAX32664C WHRM WHRM+WSpO2 v30.2.4+, v32.1.2+, v33.6.0+
+- MAX32664B WHRM v20.2.0+
+- MAX32664C WHRM WHRM+WSpO2 v30.2.4+, v32.1.2+, v33.6.0+
 
 For these versions of the algorithm, the MAX32664B/C switches to 'Deep Sleep' state to save power. The MAX32664B/C can be woken from deep sleep by the internal RTC, the connected sensor, or the MFIO pin. The host is required to wake up the MAX32664B/C prior to any I2C communication by performing the following:
 
-- · Setting MFIO to low at least 250µsec before the beginning of an I2C communication to make sure the MAX32664B/C is awake
-- · Keeping MFIO low until the end of the I2C communication to make sure the MAX32664B/C does not switch to 'Deep Sleep' state
-- · Setting MFIO to high after the end of I2C communication to allow the MAX32664B/C to switch back to 'Deep Sleep' state
+- Setting MFIO to low at least 250µsec before the beginning of an I2C communication to make sure the MAX32664B/C is awake
+- Keeping MFIO low until the end of the I2C communication to make sure the MAX32664B/C does not switch to 'Deep Sleep' state
+- Setting MFIO to high after the end of I2C communication to allow the MAX32664B/C to switch back to 'Deep Sleep' state
 
 Figure 7. Host sets MFIO low to wake up the low-powered versions of the MAX32664.
 
@@ -248,11 +248,11 @@ Variations  of  the  MAX32664  part  are  pre-programmed  with  the  different  
 
 The MAX32664 enters bootloader mode based on the sequencing of the RSTN pin and the MFIO pin. The necessary sequence is as follows:
 
-- · Set the RSTN pin low for 10ms.
-- · While RSTN is low, set the MFIO pin to low (MFIO pin should be set low at least 1ms before RSTN pin is set high.)
-- · After the 10ms has elapsed, set the RSTN pin high.
-- · After an additional 50ms has elapsed, the MAX32664 is in bootloader mode.
-- · If the enter bootloader mode command, 0x01 0x00 0x08, is not received within the first approximately 780ms and there is a valid .msbl application that has been flashed to the MAX32664, then the mode changes to the application mode automatically.
+- Set the RSTN pin low for 10ms.
+- While RSTN is low, set the MFIO pin to low (MFIO pin should be set low at least 1ms before RSTN pin is set high.)
+- After the 10ms has elapsed, set the RSTN pin high.
+- After an additional 50ms has elapsed, the MAX32664 is in bootloader mode.
+- If the enter bootloader mode command, 0x01 0x00 0x08, is not received within the first approximately 780ms and there is a valid .msbl application that has been flashed to the MAX32664, then the mode changes to the application mode automatically.
 
 Figure 8. Entering bootloader mode using the RSTN pin and the MFIO GPIO pin.
 
@@ -309,36 +309,36 @@ Table 5. Read Status Byte Value
 
 The process for an I2C write data transfer is as follows:
 
-- 1. The bus master indicates a data transfer to the device with a START condition.
-- 2. The master transmits one byte with the 7-bit slave address (most significant 7 bits of the 8-bit address) and a single write bit set to zero. The eight bits to be transferred as a slave address for the MAX32664 is 0xAA for a write transaction.
-- 3. During the next SCL clock following the write bit, the master releases SDA. During this clock period, the device responds with an ACK by pulling SDA low.
-- 4. The master senses the ACK condition and begins to transfer the Family Byte. The master drives data on the SDA circuit for each of the eight bits of the Family byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 5. The master senses the ACK condition and begins to transfer the Index Byte. The master drives data on the SDA circuit for each of the eight bits of the Index byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 6. The master senses the ACK condition and begins to transfer the Write Data Byte 0. The master drives data on the SDA circuit for each of the eight bits of the Write Data Byte 0, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 7. The master senses the ACK condition and can begin to transfer another Write Data Byte if required. The master drives data on the SDA circuit for each of the eight bits of the Write Data Byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication. If another Write Data Byte is not required, the master indicates the transfer is complete by generating a STOP condition. A STOP condition is generated when the master pulls SDA from a low to high while SCL is high.
-- 8. The master waits for a period of CMD\_DELAY (2ms is the default) for the device to have its data ready.
-- 9. The master indicates a data transfer to a slave with a START condition.
-- 10. The master transmits one byte with the7-bit slave address and a single write bit set to one. This is an indication from the master of its intent to read the device from the previously written location defined by the Family Byte and the Index Byte. The master then floats SDA and allows the device to drive SDA to send the Status Byte. The Status Byte reveals the success of the previous write sequence. After the Status Byte is read, the master drives SDA low to signal the end of data to the device.
-- 11. The master indicates the transfer is complete by generating a STOP condition.
-- 12. After the completion of the write data transfer, the Status Byte must be analyzed to determine if the write sequence was successful and the device has received the intended command.
+1. The bus master indicates a data transfer to the device with a START condition.
+2. The master transmits one byte with the 7-bit slave address (most significant 7 bits of the 8-bit address) and a single write bit set to zero. The eight bits to be transferred as a slave address for the MAX32664 is 0xAA for a write transaction.
+3. During the next SCL clock following the write bit, the master releases SDA. During this clock period, the device responds with an ACK by pulling SDA low.
+4. The master senses the ACK condition and begins to transfer the Family Byte. The master drives data on the SDA circuit for each of the eight bits of the Family byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+5. The master senses the ACK condition and begins to transfer the Index Byte. The master drives data on the SDA circuit for each of the eight bits of the Index byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+6. The master senses the ACK condition and begins to transfer the Write Data Byte 0. The master drives data on the SDA circuit for each of the eight bits of the Write Data Byte 0, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+7. The master senses the ACK condition and can begin to transfer another Write Data Byte if required. The master drives data on the SDA circuit for each of the eight bits of the Write Data Byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication. If another Write Data Byte is not required, the master indicates the transfer is complete by generating a STOP condition. A STOP condition is generated when the master pulls SDA from a low to high while SCL is high.
+8. The master waits for a period of CMD\_DELAY (2ms is the default) for the device to have its data ready.
+9. The master indicates a data transfer to a slave with a START condition.
+10. The master transmits one byte with the7-bit slave address and a single write bit set to one. This is an indication from the master of its intent to read the device from the previously written location defined by the Family Byte and the Index Byte. The master then floats SDA and allows the device to drive SDA to send the Status Byte. The Status Byte reveals the success of the previous write sequence. After the Status Byte is read, the master drives SDA low to signal the end of data to the device.
+11. The master indicates the transfer is complete by generating a STOP condition.
+12. After the completion of the write data transfer, the Status Byte must be analyzed to determine if the write sequence was successful and the device has received the intended command.
 
 ## I2C Read
 
 The process for an I2C read data transfer is as follows:
 
-- 1. The bus master indicates a data transfer to the device with a START condition.
-- 2. The master transmits one byte with the 7-bit slave address and a single write bit set to zero. The eight bits to be transferred as a slave address for the MAX32664 is 0xAA for a write transaction. This write transaction precedes the actual read transaction to indicate to the device what section is to be read.
-- 3. During the next SCL clock following the write bit, the master releases SDA. During this clock period, the device responds with an ACK by pulling SDA low.
-- 4. The master senses the ACK condition and begins to transfer the Family Byte. The master drives data on the SDA circuit for each of the eight bits of the Family byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 5. The master senses the ACK condition and begins to transfer the Index Byte. The master drives data on the SDA circuit for each of the eight bits of the Index byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 6. The master senses the ACK condition and begins to transfer the Write Data Byte if necessary for the read instruction. The master drives data on the SDA circuit for each of the eight bits of the Write Data byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
-- 7. The master indicates the transfer is complete by generating a STOP condition.
-- 8. The master waits for a period of CMD\_DELAY (2ms is the default) for the device to have its data ready.
-- 9. The master indicates a data transfer to a slave with a START condition.
-- 10. The master transmits one byte with the 7-bit slave address and a single write bit set to one. This is an indication from the master of its intent to read the device from the previously written location defined by the Family Byte and the Index Byte. The master then floats SDA and allows the device to drive SDA to send the Status Byte. The Status Byte reveals the success of the previous write sequence. After the Status Byte is read, the master drives SDA low to acknowledge the byte.
-- 11. The master floats SDA and allows the device to drive SDA to send Read Data Byte 0. After Read Data Byte 0 is read, the master drives SDA low to acknowledge the byte.
-- 12. The master floats SDA and allows the device to drive SDA to send the Read Data Byte N. After Read Data Byte N is read, the master drives SDA low to acknowledge the Read Data Byte N. This process continues until the device has provided all the data that the master expects based upon the Family Byte and Index Byte definition.
-- 13. The master indicates the transfer is complete by generating a STOP condition.
+1. The bus master indicates a data transfer to the device with a START condition.
+2. The master transmits one byte with the 7-bit slave address and a single write bit set to zero. The eight bits to be transferred as a slave address for the MAX32664 is 0xAA for a write transaction. This write transaction precedes the actual read transaction to indicate to the device what section is to be read.
+3. During the next SCL clock following the write bit, the master releases SDA. During this clock period, the device responds with an ACK by pulling SDA low.
+4. The master senses the ACK condition and begins to transfer the Family Byte. The master drives data on the SDA circuit for each of the eight bits of the Family byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+5. The master senses the ACK condition and begins to transfer the Index Byte. The master drives data on the SDA circuit for each of the eight bits of the Index byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+6. The master senses the ACK condition and begins to transfer the Write Data Byte if necessary for the read instruction. The master drives data on the SDA circuit for each of the eight bits of the Write Data byte, and then floats SDA during the ninth bit to allow the device to reply with the ACK indication.
+7. The master indicates the transfer is complete by generating a STOP condition.
+8. The master waits for a period of CMD\_DELAY (2ms is the default) for the device to have its data ready.
+9. The master indicates a data transfer to a slave with a START condition.
+10. The master transmits one byte with the 7-bit slave address and a single write bit set to one. This is an indication from the master of its intent to read the device from the previously written location defined by the Family Byte and the Index Byte. The master then floats SDA and allows the device to drive SDA to send the Status Byte. The Status Byte reveals the success of the previous write sequence. After the Status Byte is read, the master drives SDA low to acknowledge the byte.
+11. The master floats SDA and allows the device to drive SDA to send Read Data Byte 0. After Read Data Byte 0 is read, the master drives SDA low to acknowledge the byte.
+12. The master floats SDA and allows the device to drive SDA to send the Read Data Byte N. After Read Data Byte N is read, the master drives SDA low to acknowledge the Read Data Byte N. This process continues until the device has provided all the data that the master expects based upon the Family Byte and Index Byte definition.
+13. The master indicates the transfer is complete by generating a STOP condition.
 
 ## MAX32664 I2C Message Protocol Definition
 
