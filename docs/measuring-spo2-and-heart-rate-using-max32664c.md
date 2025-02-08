@@ -6,50 +6,49 @@
 
 The MAX32664C is a variant of the MAX32664 sensor-hub family, which is specifically targeted for measurement of SpO2 and heart rate. Combined with the MAX86141/MAXM86161 optical sensor and a 3-axis accelerometer, it provides the sensor's raw data, as well as calculated SpO2 and heart-rate data, to a host device through its I2C slave interface. This document provides step-by-step instructions that enable a user to communicate with the MAX32664C and to calibrate, configure, and receive measurement and monitoring data.
 
-Table of Contents
+## Table of Contents
 
-| Introduction ...................................................................................................................................  4                                                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 Architecture  ................................................................................................................................  5                                                            |
-| 1.1 Communicating with the MAX32664C  .................................................................................  7                                                                                     |
-| 1.2 Power-Saving Considerations .............................................................................................  8                                                                               |
-| 1.2.1 Report Rate ..................................................................................................................  8                                                                        |
-| 1.2.2 Polling Period  ................................................................................................................  8                                                                      |
-| 1.2.3 Report Content .............................................................................................................  8                                                                          |
-| 1.3 Accelerometer .....................................................................................................................  8                                                                     |
-| 2 SpO2 Calibration  ......................................................................................................................  10                                                                 |
-| 3 Measuring SpO2  and Heart Rate on Wrist-SpO2  and WHRM ..............................................  13                                                                                                    |
-| 3.1 Raw Data Collection Mode  ................................................................................................  13                                                                             |
-| 3.2 AGC Mode  .........................................................................................................................  14                                                                    |
-| 3.3 AEC Mode .........................................................................................................................  20                                                                     |
-| 3.4 Power-Saving Mode ..........................................................................................................  21                                                                           |
-| 4 Configurations and Settings  .....................................................................................................  21                                                                       |
-| 6 Power Consumption Estimate  ..................................................................................................  28                                                                           |
-| Revision History ..........................................................................................................................  29                                                                |
-| List of Figures                                                                                                                                                                                                |
-| communicate with the sensor (such as the MAX86141).  ..............................................................  6                                                                                         |
-| Figure 2. Architecture diagram for health-sensing applications using an I2C interface to  communicate with the sensor (such as the MAXM86161).  ...........................................................  6 |
-| Figure 3. Host interface signaling. ................................................................................................  7                                                                        |
+1. Introduction
+2. Architecture
+   1. Communicating with the MAX32664C
+   2. Power-Saving Considerations
+      1. Report Rate
+      2. Polling Period
+      3. Report Content
+   3. Accelerometer
+3. SpO2 Calibration
+4. Measuring SpO2 and Heart Rate on Wrist-SpO2 and WHRM
+   1. Raw Data Collection Mode
+   2. AGC Mode
+   3. AEC Mode
+   4. Power-Saving Mode
+5. Configurations and Settings
+6. Power Consumption Estimate
+7. Revision History
 
-## List of Tables
+### List of Figures
+1. Communicate with the sensor (such as the MAX86141)
+2. Architecture diagram for health-sensing applications using an I2C interface to communicate with the sensor (such as the MAXM86161)
+3. Host interface signaling
 
-| Table 1. Read Status Byte Value  ..................................................................................................  7                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Table 2. Host-Side Accelerometer-Sending Data to the MAX32664C .......................................  9                                                                                                                      |
-| Table 3. Host Commands-SpO2 in Calibration Mode ...............................................................  11                                                                                                            |
-| Table 4. Format of Received Samples-SpO2 in Calibration Mode  ............................................  12                                                                                                                 |
-| Table 5. Host Commands-Raw Data Mode  ..............................................................................  13                                                                                                       |
-| Table 6. Format of Received Samples-Raw Data Mode ..........................................................  14                                                                                                               |
-| Table 7. Host Commands-AGC Mode  ......................................................................................  15                                                                                                    |
-| Table 8. Format of Received Samples-Normal Algorithm Report ............................................  16                                                                                                                   |
-| Table 9. Format of Received Samples-Extended Algorithm Report  .........................................  17                                                                                                                   |
-| Table 10. Host Commands-AEC Mode ....................................................................................  20                                                                                                      |
-| Table 11. Algorithm Configuration and Settings .........................................................................  21                                                                                                   |
-| Table 12. Frequently Used Sensor Hub Settings and Commands .............................................  24                                                                                                                   |
-| Table 13. Host Commands to Enable/Disable Wake Up on Motion Configuration of Sensor Hub  Accelerometer for Off-Skin State ................................................................................................  27 |
-| Table 14. Comparison of Active and Deep Sleep Power-Single Supply (VDD Only)  .................  28                                                                                                                            |
-| Table 15. Comparison of Active and Deep Sleep Power-Dual Supply (VDD and VCORE)  ...........  28                                                                                                                               |
-| Table 16. Estimated Power Consumption for the MAX32664C ..................................................  28                                                                                                                 |
+### List of Tables
+
+1. Read Status Byte Value
+2. Host-Side Accelerometer-Sending Data to the MAX32664C
+3. Host Commands-SpO2 in Calibration Mode
+4. Format of Received Samples-SpO2 in Calibration Mode
+5. Host Commands-Raw Data Mode
+6. Format of Received Samples-Raw Data Mode
+7. Host Commands-AGC Mode
+8. Format of Received Samples-Normal Algorithm Report
+9. Format of Received Samples-Extended Algorithm Report
+10. Host Commands-AEC Mode
+11. Algorithm Configuration and Settings
+12. Frequently Used Sensor Hub Settings and Commands
+13. Host Commands to Enable/Disable Wake Up on Motion Configuration of Sensor Hub Accelerometer for Off-Skin State
+14. Comparison of Active and Deep Sleep Power-Single Supply (VDD Only)
+15. Comparison of Active and Deep Sleep Power-Dual Supply (VDD and VCORE)
+16. Estimated Power Consumption for the MAX32664C
 
 ## Introduction
 
