@@ -217,13 +217,13 @@ void app_main() {
 
 	const auto write_bootloader = [=]() {
 		constexpr auto OK  = flash::SUCCESS;
-		constexpr auto tag = "bl";
+		constexpr auto TAG = "bl";
 		{
 			uint8_t out[2]{};
 			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::IDX_DEV_MODE_R, out, 10);
 			ESP_ERROR_CHECK(err);
 			if (auto status = out[0]; out[1] != flash::DEV_MODE_R_BL || status != OK) {
-				ESP_LOGE(tag, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
+				ESP_LOGE(TAG, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
 				return ESP_FAIL;
 			}
 		}
@@ -233,10 +233,10 @@ void app_main() {
 			esp_err_t err = read_command(0xff, 0x00, out);
 			ESP_ERROR_CHECK(err);
 			if (out[0] != OK) {
-				ESP_LOGE(tag, "can't get MCU type; out(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
+				ESP_LOGE(TAG, "can't get MCU type; out(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
 				return ESP_FAIL;
 			} else {
-				ESP_LOGI(tag, "mcu type=0x%02x", out[1]);
+				ESP_LOGI(TAG, "mcu type=0x%02x", out[1]);
 			}
 		}
 		{
@@ -245,13 +245,13 @@ void app_main() {
 			const uint8_t in[] = {flash::FMY_BL_W, flash::IDX_BL_W_PAGE_NUM, 0x00, num_of_pages};
 			auto status        = write_command_ext_buf(in);
 			if (!status) {
-				ESP_LOGE(tag, "failed to write number of pages; write_command_ext_buf error=%d", status.error());
+				ESP_LOGE(TAG, "failed to write number of pages; write_command_ext_buf error=%d", status.error());
 				return status.error();
 			} else if (status.value() != OK) {
-				ESP_LOGE(tag, "failed to write number of pages; status=%d", status.value());
+				ESP_LOGE(TAG, "failed to write number of pages; status=%d", status.value());
 				return ESP_FAIL;
 			}
-			ESP_LOGI(tag, "number of pages %d written", num_of_pages);
+			ESP_LOGI(TAG, "number of pages %d written", num_of_pages);
 
 			// use heap to avoid stack overflow, use unique_ptr to enable RAII behavior
 			auto wr_buf_ptr   = std::make_unique<uint8_t[]>(2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
@@ -262,13 +262,13 @@ void app_main() {
 			std::ranges::copy(flash::init_vector_bytes(), wr_buf.data() + 2);
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::init_vector_bytes().size()));
 			if (!status) {
-				ESP_LOGE(tag, "failed to write nonce; write_command_ext_buf error=%d", status.error());
+				ESP_LOGE(TAG, "failed to write nonce; write_command_ext_buf error=%d", status.error());
 				return status.error();
 			} else if (status.value() != OK) {
-				ESP_LOGE(tag, "failed to write nonce; status=%d", status.value());
+				ESP_LOGE(TAG, "failed to write nonce; status=%d", status.value());
 				return ESP_FAIL;
 			}
-			ESP_LOGI(tag, "nonce written");
+			ESP_LOGI(TAG, "nonce written");
 
 			// write auth
 			wr_buf[0] = flash::FMY_BL_W;
@@ -276,34 +276,34 @@ void app_main() {
 			std::ranges::copy(flash::auth_bytes(), wr_buf.data() + 2);
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()), 10);
 			if (!status) {
-				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
+				ESP_LOGE(TAG, "failed to write auth; write_command_ext_buf error=%d", status.error());
 				return status.error();
 			} else if (status.value() != OK) {
-				ESP_LOGE(tag, "failed to write auth; status=%d", status.value());
+				ESP_LOGE(TAG, "failed to write auth; status=%d", status.value());
 				return ESP_FAIL;
 			}
-			ESP_LOGI(tag, "auth written");
+			ESP_LOGI(TAG, "auth written");
 
 			const auto erase = [=]() {
-				// erase app
 				wr_buf[0]   = flash::FMY_BL_W;
 				wr_buf[1]   = flash::IDX_BL_W_ERASE_APP;
 				auto status = write_command_ext_buf(std::span(wr_buf.data(), 2), 1'400);
 				if (!status) {
-					ESP_LOGE(tag, "failed to erase app; write_command_ext_buf error=%d", status.error());
+					ESP_LOGE(TAG, "failed to erase app; write_command_ext_buf error=%d", status.error());
 					return status.error();
 				} else if (status.value() != OK) {
-					ESP_LOGE(tag, "failed to erase app; status=0x%02x", status.value());
+					ESP_LOGE(TAG, "failed to erase app; status=0x%02x", status.value());
 					return ESP_FAIL;
 				}
 				return ESP_OK;
 			};
+			// erase app
 			constexpr auto RETRY_DELAY_MS = 100;
 			while (erase() != ESP_OK) {
 				delay_ms(RETRY_DELAY_MS);
 			}
 
-			ESP_LOGI(tag, "app erased");
+			ESP_LOGI(TAG, "app erased");
 			delay_ms(500);
 
 			// send pages
@@ -321,29 +321,29 @@ void app_main() {
 				const auto write_current_page = [=]() {
 					auto e = write_command_ext_buf(std::span(wr_buf.data(), 2 + page.size()), 680);
 					if (!e) {
-						ESP_LOGE(tag, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, e.error(), esp_err_to_name(e.error()));
+						ESP_LOGE(TAG, "failed to write page %d; write_command_ext_buf error=%d (%s)", i, e.error(), esp_err_to_name(e.error()));
 						return e.error();
 					} else if (e.value() != OK) {
-						ESP_LOGE(tag, "failed to write page %d; status=0x%02x", i, e.value());
+						ESP_LOGE(TAG, "failed to write page %d; status=0x%02x", i, e.value());
 						return ESP_FAIL;
 					}
-					ESP_LOGI(tag, "page %d written", i);
+					ESP_LOGI(TAG, "page %d written", i);
 					return ESP_OK;
 				};
 				while (write_current_page() != ESP_OK) {
 					delay_ms(RETRY_DELAY_MS);
-					ESP_LOGW(tag, "retry page %d", i);
+					ESP_LOGW(TAG, "retry page %d", i);
 				}
 			}
 		}
 
-		ESP_LOGI(tag, "bootloader written");
+		ESP_LOGI(TAG, "bootloader written");
 		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL, 50);
 		if (!status) {
-			ESP_LOGE(tag, "failed to exit bootloader; write_command_byte error=%d", status.error());
+			ESP_LOGE(TAG, "failed to exit bootloader; write_command_byte error=%d", status.error());
 			return status.error();
 		} else if (status.value() != OK) {
-			ESP_LOGE(tag, "failed to exit bootloader; status=%d", status.value());
+			ESP_LOGE(TAG, "failed to exit bootloader; status=%d", status.value());
 			return ESP_FAIL;
 		}
 		return ESP_OK;
@@ -379,6 +379,7 @@ init_retry:
 		return write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_ENTER_BL, 50);
 	};
 
+	// check version/bootloader mode, decide whether to write the bootloader
 	if (mode == flash::DEV_MODE_R_BL) {
 		ESP_LOGW(TAG, "I'm in bootloader mode. try to write application to the chip.");
 		const auto msbl = flash::msbl();
@@ -423,58 +424,262 @@ init_retry:
 		goto init_retry;
 	}
 
-	while (true) {
-		esp_err_t esp_err;
-		uint8_t out[2];
-		esp_err = read_command(0x02, 0x00, out);
-		delay_ms(10);
+	// Automatic Exposure Control (AEC) is Maxim’s gain control algorithm that is superior to AGC. The
+	// AEC algorithm optimally maintains the best SNR range and power optimization. The targeted
+	// SNR range is maintained regardless of skin color or ambient temperature within the limits of the
+	// LED currents configurations; The AEC dynamically manages the appropriate register settings for
+	// sampling rate, LED current, pulse width and integration time.
+
+	// Skin contact detector (SCD)
+
+	// For hardware testing purposes, the user may choose to start the sensor hub to collect raw PPG
+	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
+	// by enabling the accelerometer and the AFE.
+	const auto set_fifo_mode = [=](flash::FIFO_OUTPUT_MODE mode) {
+		return write_command_byte(0x11, 0x00, static_cast<uint8_t>(mode));
+	};
+
+	enum class AccelSensorEn : uint16_t {
+		DisableHubAccel = 0x0000,
+		DisableExtAccel = 0x0001,
+		EnableHubAccel  = 0x0100,
+		EnableExtAccel  = 0x0101,
+	};
+
+	const auto enable_accel = [=](AccelSensorEn mode) {
+		// Sensor Mode Enable
+		// Enable accelerometer
+		const auto mode_val = static_cast<uint16_t>(mode);
+		uint8_t buf[4]      = {
+            0x44,
+            0x04,
+            static_cast<uint8_t>(mode_val >> 8),
+            static_cast<uint8_t>(mode_val & 0xff),
+        };
+		return write_command_ext_buf(std::span(buf), 20);
+	};
+
+	// Any command to change the sensor registers should appear AFTER enabling the sensor or they will be
+	// overridden by the default settings.
+	// By default, the algorithm sets the following AFE registers:
+	//
+	// Sample rate: 100Hz, 1-sample averaging (samples report period: 10 msec)
+	// Integration time: 117μs
+	// ADCs 1 and 2 range: 32μA
+	// LEDs 1, 2, and 3 full range: 124mA
+	const auto enable_sensors = [=] -> esp_err_t {
+		auto err = enable_accel(AccelSensorEn::EnableHubAccel);
+		if (!err) {
+			ESP_LOGE(TAG, "failed to enable accelerometer; err=%s (%d)", esp_err_to_name(err.error()), err.error());
+			return err.error();
+		}
+		if (err.value() != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to enable accelerometer; status=%d", err.value());
+			return ESP_FAIL;
+		}
+		// Enable the MAX86140/ MAX86141/ MAXM86146/ MAXM86161 sensor.
+		uint8_t buf[4] = {0x44, 0x00, 0x01, 0x00};
+		err            = write_command_ext_buf(std::span(buf), 250);
+		if (!err) {
+			ESP_LOGE(TAG, "failed to enable AFE; err=%s (%d)", esp_err_to_name(err.error()), err.error());
+			return err.error();
+		}
+		if (err.value() != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to enable AFE; status=%d", err.value());
+			return ESP_FAIL;
+		}
+		return ESP_OK;
+	};
+
+	const auto write_afe_registers = [=](std::span<const uint8_t> buf) -> expected<uint8_t, esp_err_t> {
+		using ue          = unexpected<esp_err_t>;
+		constexpr auto N  = 18;
+		constexpr auto NN = N - 2;
+		if (buf.size() > NN) {
+			return ue{ESP_ERR_NO_MEM};
+		}
+		std::array<uint8_t, N> buf_ext = {};
+		buf_ext[0]                     = 0x40;
+		buf_ext[1]                     = 0x00;
+		std::ranges::copy(buf, buf_ext.begin() + 2);
+		return write_command_ext_buf(std::span(buf_ext.data(), buf_ext.size()), 100);
+	};
+	const auto configure_afe = [=] -> esp_err_t {
+		constexpr auto log_result = [](const char *entry, expected<uint8_t, esp_err_t> result) {
+			constexpr auto TAG = "afe";
+			if (!result) {
+				ESP_LOGE(TAG, "%s; err=%s (%d)", entry, esp_err_to_name(result.error()), result.error());
+				return false;
+			} else if (result.value() != flash::SUCCESS) {
+				ESP_LOGE(TAG, "%s; status=%d", entry, result.value());
+				return false;
+			} else {
+				ESP_LOGI(TAG, "%s; success", entry);
+				return true;
+			}
+		};
+		std::array<uint8_t, 2> afe_buf = {};
+
+		// set the sample rate to 100Hz with 1 sample averaging
+		afe_buf  = {0x12, 0x18};
+		auto res = write_afe_registers(afe_buf);
+		if (not log_result("set sample rate", res)) {
+			return ESP_FAIL;
+		}
+
+		// set the LED current to half of full scale
+		// reduce the value if saturation is observed
+		afe_buf = {0x23, 0x7f};
+		if (not log_result("set LED1 current", write_afe_registers(afe_buf))) {
+			return ESP_FAIL;
+		}
+
+		afe_buf = {0x24, 0x7f};
+		if (not log_result("set LED2 current", write_afe_registers(afe_buf))) {
+			return ESP_FAIL;
+		}
+
+		afe_buf = {0x25, 0x7f};
+		if (not log_result("set LED3 current", write_afe_registers(afe_buf))) {
+			return ESP_FAIL;
+		}
+
+		return ESP_OK;
+	};
+
+	const auto app_raw_mode_init = [=] {
+		// set the output FIFO mode to Sensor data only.
+		set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_DATA);
+		enable_sensors();
+		configure_afe();
+	};
+
+	struct SensorHubStatus {
+		bool comm_error : 1;       // Bit 0: Sensor comm error
+		bool reserved_1 : 2;       // Bits 1 and 2: Reserved
+		bool data_rdy_int : 1;     // Bit 3: FIFO filled to threshold (DataRdyInt)
+		bool fifo_out_ovr_int : 1; // Bit 4: Output FIFO overflow (FifoOutOvrInt)
+		bool fifo_in_ovr_int : 1;  // Bit 5: Input FIFO overflow (FifoInOverInt)
+		bool dev_busy : 1;         // Bit 6: Sensor hub busy (DevBusy)
+		bool reserved_2 : 1;       // Bit 7: Reserved
+	} __attribute__((packed));
+	const auto sensor_hub_status = [=] -> expected<SensorHubStatus, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		uint8_t buf[2];
+		esp_err_t esp_err = read_command(0x00, 0x00, buf);
 		if (esp_err != ESP_OK) {
-			ESP_LOGW(TAG, "mode=(%d, %d)", out[0], out[1]);
-			continue;
-		} else {
-			mode = static_cast<flash::DevModeR>(out[1]);
+			ESP_LOGE(TAG, "failed to read sensor hub status; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
+			return ue{esp_err};
 		}
-
-		if (mode == flash::DEV_MODE_R_BL) {
-			esp_err = read_command(0xFF, 0x00, out);
-			ESP_LOGI(TAG, "bl(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
-
-			uint8_t version[4];
-			esp_err = read_command(0x81, 0x00, version);
-			ESP_LOGI(TAG, "bl(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
-					 version[2], version[3]);
-
-			uint8_t page_size[3];
-			esp_err                   = read_command(0x81, 0x01, page_size);
-			uint16_t &page_size_be    = *reinterpret_cast<uint16_t *>(page_size + 1);
-			uint16_t page_size_native = __ntohs(page_size_be);
-			ESP_LOGI(TAG, "bl(page_size)=(0x%02x, 0x%02x, 0x%02x) size=%d", page_size[0],
-					 page_size[1], page_size[2], page_size_native);
-		} else {
-			esp_err = read_command(0xFF, 0x00, out);
-			ESP_LOGI(TAG, "app(mcu)=(0x%02x, 0x%02x)", out[0], out[1]);
-
-			uint8_t version[4];
-			esp_err = read_command(0xFF, 0x03, version);
-			ESP_LOGI(TAG, "app(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
-					 version[2], version[3]);
-
-			uint8_t afe_attr[3];
-			esp_err = read_command(0x42, 0x00, afe_attr);
-			ESP_LOGI(TAG, "app(afe_attr, 86141)=(0x%02x, 0x%02x, 0x%02x)", afe_attr[0], afe_attr[1], afe_attr[2]);
-
-			uint8_t output_mode[2];
-			esp_err = read_command(0x11, 0x00, output_mode);
-			ESP_LOGI(TAG, "app(output_mode)=(0x%02x, 0x%02x)", output_mode[0], output_mode[1]);
-
-			uint8_t hub_status[2];
-			esp_err = read_command(0x00, 0x00, hub_status);
-			ESP_LOGI(TAG, "app(hub_status)=(0x%02x, 0x%02x)", hub_status[0], hub_status[1]);
-
-			uint8_t i2c_addr[2];
-			esp_err = read_command(0x11, 0x03, i2c_addr);
-			ESP_LOGI(TAG, "app(i2c_addr)=(0x%02x, 0x%02x)", i2c_addr[0], i2c_addr[1]);
+		if (buf[0] != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to read sensor hub status; status=%d", buf[0]);
+			return ue{ESP_FAIL};
 		}
-		delay_ms(900);
+		return *reinterpret_cast<SensorHubStatus *>(&buf[1]);
+	};
+
+	const auto sensor_hub_get_number_of_samples = [=] -> expected<uint8_t, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		uint8_t buf[2];
+		esp_err_t esp_err = read_command(0x12, 0x00, buf);
+		if (esp_err != ESP_OK) {
+			ESP_LOGE(TAG, "failed to read sensor hub number of samples; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
+			return ue{esp_err};
+		}
+		if (buf[0] != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to read sensor hub number of samples; status=%d", buf[0]);
+			return ue{ESP_FAIL};
+		}
+		return buf[1];
+	};
+
+	// 18 bytes
+	static constexpr auto RAW_SAMPLE_SIZE = 3 * 6 + 3 * 2;
+	struct raw_sample_t {
+		uint32_t green;
+		uint32_t ir;
+		uint32_t red;
+
+		// two's complement, LSB=0.001g
+		int16_t accel_x;
+		int16_t accel_y;
+		int16_t accel_z;
+
+		static expected<raw_sample_t, esp_err_t> unmarshal(std::span<const uint8_t> buf) {
+			using ue = unexpected<esp_err_t>;
+			if (buf.size() < RAW_SAMPLE_SIZE) {
+				return ue{ESP_ERR_NO_MEM};
+			}
+			// 3 bytes for each ppg, MSB first
+			const uint32_t ppg1 = static_cast<uint32_t>(buf[0]) << 16 | static_cast<uint32_t>(buf[1]) << 8 | static_cast<uint32_t>(buf[2]); // green
+			const uint32_t ppg2 = static_cast<uint32_t>(buf[3]) << 16 | static_cast<uint32_t>(buf[4]) << 8 | static_cast<uint32_t>(buf[5]); // ir
+			const uint32_t ppg3 = static_cast<uint32_t>(buf[6]) << 16 | static_cast<uint32_t>(buf[7]) << 8 | static_cast<uint32_t>(buf[8]); // red
+
+			const uint32_t ppg4 = static_cast<uint32_t>(buf[9]) << 16 | static_cast<uint32_t>(buf[10]) << 8 | static_cast<uint32_t>(buf[11]);  // green2, N/A for MAX86141
+			const uint32_t ppg5 = static_cast<uint32_t>(buf[12]) << 16 | static_cast<uint32_t>(buf[13]) << 8 | static_cast<uint32_t>(buf[14]); // N/A
+			const uint32_t ppg6 = static_cast<uint32_t>(buf[15]) << 16 | static_cast<uint32_t>(buf[16]) << 8 | static_cast<uint32_t>(buf[17]); // N/A
+
+			// 2 bytes for each accel, MSB first, LSB=0.001g
+			const int16_t accel_x = static_cast<int16_t>(buf[18]) << 8 | static_cast<int16_t>(buf[19]);
+			const int16_t accel_y = static_cast<int16_t>(buf[20]) << 8 | static_cast<int16_t>(buf[21]);
+			const int16_t accel_z = static_cast<int16_t>(buf[22]) << 8 | static_cast<int16_t>(buf[23]);
+			return raw_sample_t{ppg1, ppg2, ppg3, accel_x, accel_y, accel_z};
+		}
+	};
+
+	const auto sensor_hub_read_sample = [=] -> expected<raw_sample_t, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		uint8_t buf[1 + RAW_SAMPLE_SIZE];
+		esp_err_t esp_err = read_command(0x12, 0x01, buf);
+		if (esp_err != ESP_OK) {
+			ESP_LOGE(TAG, "failed to read sensor hub sample; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
+			return ue{esp_err};
+		}
+		if (buf[0] != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to read sensor hub sample; status=%d", buf[0]);
+			return ue{ESP_FAIL};
+		}
+		return raw_sample_t::unmarshal(std::span(buf + 1, RAW_SAMPLE_SIZE));
+	};
+
+	// Host reads samples periodically (do not execute at a faster rate than the samples report period)
+	// The host is required to periodically check the sensor hub for an available samples report. The default samples report period is 40ms which means sample rate is 25Hz
+	const auto app_raw_iter = [=] {
+		auto status_ = sensor_hub_status();
+		if (!status_) {
+			ESP_LOGE(TAG, "failed to get sensor hub status; err=%s (%d)", esp_err_to_name(status_.error()), status_.error());
+			return;
+		}
+		const auto status = *status_;
+		if (not status.data_rdy_int) {
+			ESP_LOGE(TAG, "no data; status(comm_error=%d, data_rdy_int=%d, fifo_out_ovr_int=%d, fifo_in_ovr_int=%d, dev_busy=%d) (0x%02x)",
+					 status.comm_error, status.data_rdy_int, status.fifo_out_ovr_int, status.fifo_in_ovr_int, status.dev_busy,
+					 *reinterpret_cast<const uint8_t *>(&status));
+			return;
+		}
+		auto fifo_count_ = sensor_hub_get_number_of_samples();
+		if (!fifo_count_) {
+			return;
+		}
+		const auto fifo_count = *fifo_count_;
+		if (fifo_count == 0) {
+			ESP_LOGE(TAG, "sensor hub FIFO is empty");
+			return;
+		}
+		for (uint8_t i = 0; i < fifo_count; ++i) {
+			auto sample_ = sensor_hub_read_sample();
+			if (!sample_) {
+				return;
+			}
+			const auto sample = *sample_;
+			ESP_LOGI(TAG, "sample(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ", %" PRIi16 ", %" PRIi16 ", %" PRIi16 ")", sample.green, sample.ir, sample.red, sample.accel_x, sample.accel_y, sample.accel_z);
+		}
+	};
+
+	app_raw_mode_init();
+	ESP_LOGI(TAG, "raw mode initialized");
+	while (true) {
+		delay_ms(100);
+		app_raw_iter();
 	}
 }

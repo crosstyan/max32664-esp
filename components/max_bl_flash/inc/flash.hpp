@@ -83,6 +83,17 @@ enum StatusCode : uint8_t {
 	ERR_BTLDR_TRY_AGAIN = 0x05,
 };
 
+enum class FIFO_OUTPUT_MODE : uint8_t {
+	PAUSE           = 0x00, // No data output
+	SENSOR_DATA     = 0x01, // Raw sensor data only
+	ALGORITHM_DATA  = 0x02, // Processed algorithm data only
+	SENSOR_AND_ALGO = 0x03, // Both sensor and algorithm data
+	PAUSE_ALT       = 0x04, // Alternative pause mode (no data)
+	COUNTER_SENSOR  = 0x05, // Sample counter byte + sensor data
+	COUNTER_ALGO    = 0x06  // Sample counter byte + algorithm data
+};
+
+
 const std::span<const uint8_t> msbl();
 const std::span<const uint8_t> auth_bytes();
 const std::span<const uint8_t> init_vector_bytes();
