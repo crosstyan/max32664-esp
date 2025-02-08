@@ -15,6 +15,7 @@
 #include <tuple>
 #include <flash.hpp>
 #include <tl/expected.hpp>
+#include <memory>
 
 namespace app {
 void IRAM_ATTR delay_us(uint32_t us) {
@@ -63,7 +64,7 @@ void print_as_hex(std::span<const uint8_t> data) {
 } // namespace app
 
 // Wait timeout, in ms. Note: -1 means wait forever.
-constexpr auto DEFAULT_I2C_TIMEOUT_MS = 1'000;
+constexpr auto DEFAULT_I2C_TIMEOUT_MS = 5'000;
 extern "C" [[noreturn]]
 void app_main();
 
@@ -252,13 +253,9 @@ void app_main() {
 			}
 			ESP_LOGI(tag, "number of pages %d written", num_of_pages);
 
-			// use heap to avoid stack overflow
-			uint8_t *wr_buf_heap  = new uint8_t[2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE];
-			const auto wr_buf     = std::span(wr_buf_heap, 2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
-			const auto on_cleanup = [wr_buf_heap] {
-				delete[] wr_buf_heap;
-			};
-
+			// use heap to avoid stack overflow, use unique_ptr to enable RAII behavior
+			auto wr_buf_ptr   = std::make_unique<uint8_t[]>(2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+			const auto wr_buf = std::span(wr_buf_ptr.get(), 2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
 			// write nonce
 			wr_buf[0] = flash::FMY_BL_W;
 			wr_buf[1] = flash::IDX_BL_W_NONCE;
@@ -266,11 +263,9 @@ void app_main() {
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::init_vector_bytes().size()));
 			if (!status) {
 				ESP_LOGE(tag, "failed to write nonce; write_command_ext_buf error=%d", status.error());
-				on_cleanup();
 				return status.error();
 			} else if (status.value() != OK) {
 				ESP_LOGE(tag, "failed to write nonce; status=%d", status.value());
-				on_cleanup();
 				return ESP_FAIL;
 			}
 			ESP_LOGI(tag, "nonce written");
@@ -282,11 +277,9 @@ void app_main() {
 			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()), 10);
 			if (!status) {
 				ESP_LOGE(tag, "failed to write auth; write_command_ext_buf error=%d", status.error());
-				on_cleanup();
 				return status.error();
 			} else if (status.value() != OK) {
 				ESP_LOGE(tag, "failed to write auth; status=%d", status.value());
-				on_cleanup();
 				return ESP_FAIL;
 			}
 			ESP_LOGI(tag, "auth written");
@@ -339,10 +332,9 @@ void app_main() {
 				};
 				while (write_current_page() != ESP_OK) {
 					delay_ms(RETRY_DELAY_MS);
+					ESP_LOGW(tag, "retry page %d", i);
 				}
-				ESP_LOGI(tag, "page %d written", i);
 			}
-			on_cleanup();
 		}
 
 		ESP_LOGI(tag, "bootloader written");
@@ -362,7 +354,7 @@ init_retry:
 	flash::DevModeR mode = flash::DEV_MODE_R_APP;
 	{
 		uint8_t out[2];
-		auto esp_err = read_command(0x02, 0x00, out);
+		auto esp_err = read_command(flash::FMY_DEV_MODE_R, flash::IDX_DEV_MODE_R, out, 10);
 		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
 			ESP_LOGW(TAG, "err='%s'(%d), mode=(%d, %d)", esp_err_to_name(esp_err), status, out[0], out[1]);
 			delay_ms(1'000);
@@ -396,13 +388,9 @@ init_retry:
 		printf("init_vector(%d)=", flash::init_vector_bytes().size());
 		print_as_hex(flash::init_vector_bytes());
 		ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
-		auto ok = write_bootloader();
-		while (ok != ESP_OK) {
-			delay_ms(1'000);
-			ok = write_bootloader();
-		}
+		write_bootloader();
 		esp_restart();
-	} else {
+	} else if (mode == flash::DEV_MODE_R_APP) {
 		esp_err_t esp_err;
 		ESP_LOGI(TAG, "app mode");
 		uint8_t version[4];
@@ -430,6 +418,9 @@ init_retry:
 			delay_ms(500);
 			goto init_retry;
 		}
+	} else {
+		ESP_LOGE(TAG, "unknown mode; mode=%d", mode);
+		goto init_retry;
 	}
 
 	while (true) {
