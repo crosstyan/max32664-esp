@@ -665,18 +665,19 @@ init_retry:
 		if (!fifo_count_) {
 			return;
 		}
-		const auto fifo_count = *fifo_count_;
+		auto fifo_count = *fifo_count_;
 		if (fifo_count == 0) {
 			ESP_LOGE(TAG, "sensor hub FIFO is empty");
 			return;
 		}
-		for (uint8_t i = 0; i < fifo_count; ++i) {
+		while (fifo_count > 0) {
 			auto sample_ = sensor_hub_read_sample();
 			if (!sample_) {
 				return;
 			}
 			const auto sample = *sample_;
 			ESP_LOGI(TAG, "sample(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ", %" PRIi16 ", %" PRIi16 ", %" PRIi16 ")", sample.green, sample.ir, sample.red, sample.accel_x, sample.accel_y, sample.accel_z);
+			fifo_count--;
 		}
 	};
 
