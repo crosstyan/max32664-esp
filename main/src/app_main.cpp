@@ -436,7 +436,11 @@ init_retry:
 	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
 	// by enabling the accelerometer and the AFE.
 	const auto set_fifo_mode = [=](flash::FIFO_OUTPUT_MODE mode) {
-		return write_command_byte(0x11, 0x00, static_cast<uint8_t>(mode));
+		return write_command_byte(0x10, 0x00, static_cast<uint8_t>(mode));
+	};
+
+	const auto set_fifo_threshold = [=](uint8_t threshold) {
+		return write_command_byte(0x10, 0x01, threshold);
 	};
 
 	enum class AccelSensorEn : uint16_t {
@@ -550,6 +554,7 @@ init_retry:
 	const auto app_raw_mode_init = [=] {
 		// set the output FIFO mode to Sensor data only.
 		set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_DATA);
+		set_fifo_threshold(0x02);
 		enable_sensors();
 		configure_afe();
 	};
@@ -593,7 +598,6 @@ init_retry:
 		return buf[1];
 	};
 
-	// 18 bytes
 	static constexpr auto RAW_SAMPLE_SIZE = 3 * 6 + 3 * 2;
 	struct raw_sample_t {
 		uint32_t green;
