@@ -398,8 +398,8 @@ init_retry:
 		ESP_LOGI(TAG, "app(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
 				 version[2], version[3]);
 		const auto status = version[0];
-		// MAX32664C_OS58_I2C_1PD_WHRM_AEC_SCD_WSPO2_C_32.9.23
-		constexpr auto EXPECTED_VERSION_TUPLE = std::array<uint8_t, 3>{32, 9, 23};
+		// MAX32664C_HSP2_WHRM_AEC_SCD_WSPO2_C_30.13.31
+		constexpr auto EXPECTED_VERSION_TUPLE = std::array<uint8_t, 3>{30, 13, 31};
 		if (esp_err != ESP_OK || status != flash::SUCCESS) {
 			ESP_LOGE(TAG, "failed to read version; esp_err=%s(%d), status=%d", esp_err_to_name(esp_err), esp_err, status);
 			delay_ms(1'000);
