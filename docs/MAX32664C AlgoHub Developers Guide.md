@@ -1,6 +1,6 @@
-<!-- image -->
+## MAX32664C AlgoHub - Developers Guide 
 
-## MAX32664C AlgoHub - Developers Guide Rev 0; 02/21
+Rev 0; 02/21
 
 ## Abstract
 

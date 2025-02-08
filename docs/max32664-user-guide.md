@@ -1,6 +1,6 @@
-<!-- image -->
-
 ## MAX32664 User Guide
+
+UG6806; Rev 3; 8/20
 
 ## Abstract
 
