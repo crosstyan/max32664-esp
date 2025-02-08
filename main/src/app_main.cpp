@@ -144,7 +144,7 @@ void app_main() {
 					 bool is_sleep_on_end  = false) -> esp_err_t {
 		esp_err_t err;
 		gpio_set_level(PIN_MFIO, 0);
-		delay_us(250);
+		delay_ms(1);
 		const auto on_end = [is_sleep_on_end] {
 			if (is_sleep_on_end) {
 				gpio_set_level(PIN_MFIO, 1);
@@ -365,9 +365,9 @@ void app_main() {
 	};
 
 
+init_retry:
 	flash::DevModeR mode = flash::DEV_MODE_R_APP;
 	{
-	init_retry:
 		uint8_t out[2];
 		auto esp_err = read_command(0x02, 0x00, out);
 		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
@@ -378,8 +378,21 @@ void app_main() {
 		mode = static_cast<flash::DevModeR>(out[1]);
 	}
 
+	const auto reset_to_bootloader_by_pin = [] {
+		// set RSTN low
+		gpio_set_level(PIN_RESET, 0);
+		// While RSTN is low, set the MFIO pin to low.
+		gpio_set_level(PIN_MFIO, 0);
+		// The MFIO pin should be set to low at least 1ms before the RSTN pin is set to high.
+		// After the 10ms has elapsed, set the RSTN pin to high.
+		delay_ms(10);
+		gpio_set_level(PIN_RESET, 1);
+		// After an additional 50ms has elapsed, the sensor hub is in Bootloader mode.
+		delay_ms(100);
+	};
+
 	if (mode == flash::DEV_MODE_R_BL) {
-		ESP_LOGW(TAG, "I'm in bootloader mode; It should not happen normally! I would try to write the application to the device.");
+		ESP_LOGW(TAG, "I'm in bootloader mode. try to write application to the chip.");
 		const auto msbl = flash::msbl();
 		ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
 		printf("auth_bytes(%d)=", flash::auth_bytes().size());
@@ -390,7 +403,30 @@ void app_main() {
 		write_bootloader();
 		esp_restart();
 	} else {
+		esp_err_t esp_err;
 		ESP_LOGI(TAG, "app mode");
+		uint8_t version[4];
+		esp_err = read_command(0xFF, 0x03, version);
+		ESP_LOGI(TAG, "app(version)=(0x%02x, 0x%02x, 0x%02x, 0x%02x)", version[0], version[1],
+				 version[2], version[3]);
+		const auto status = version[0];
+		// MAX32664C_OS58_I2C_1PD_WHRM_AEC_SCD_WSPO2_C_32.9.23
+		constexpr auto EXPECTED_VERSION_TUPLE = std::array<uint8_t, 3>{32, 9, 23};
+		if (esp_err != ESP_OK || status != flash::SUCCESS) {
+			ESP_LOGE(TAG, "failed to read version; esp_err=%s(%d), status=%d", esp_err_to_name(esp_err), esp_err, status);
+			delay_ms(1'000);
+			goto init_retry;
+		}
+		auto v = std::span(version + 1, 3);
+		if (std::equal(v.begin(), v.end(), EXPECTED_VERSION_TUPLE.begin())) {
+			ESP_LOGI(TAG, "version=%d.%d.%d", version[0], version[1], version[2]);
+		} else {
+			ESP_LOGW(TAG, "unexpected version; expected=%d.%d.%d, actual=%d.%d.%d",
+					 EXPECTED_VERSION_TUPLE[0], EXPECTED_VERSION_TUPLE[1], EXPECTED_VERSION_TUPLE[2], version[0], version[1], version[2]);
+			ESP_LOGI(TAG, "enter bootloader mode and rewrite the application");
+			reset_to_bootloader_by_pin();
+			goto init_retry;
+		}
 	}
 
 	while (true) {
