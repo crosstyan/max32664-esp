@@ -371,7 +371,8 @@ void app_main() {
 		uint8_t out[2];
 		auto esp_err = read_command(0x02, 0x00, out);
 		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
-			ESP_LOGW(TAG, "mode=(%d, %d)", out[0], out[1]);
+			ESP_LOGW(TAG, "err='%s'(%d), mode=(%d, %d)", esp_err_to_name(esp_err), status, out[0], out[1]);
+			delay_ms(100);
 			goto init_retry;
 		}
 		mode = static_cast<flash::DevModeR>(out[1]);

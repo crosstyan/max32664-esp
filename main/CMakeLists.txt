@@ -3,7 +3,7 @@
 
 idf_component_register(
         SRCS
-        src/lane_main.cpp
+        src/app_main.cpp
 
         INCLUDE_DIRS
         inc
