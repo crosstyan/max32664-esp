@@ -87,12 +87,12 @@ void app_main() {
 	using namespace tl;
 	using namespace max;
 	constexpr auto TAG = "main";
+
 	NimBLEDevice::init(BLE_DEVICE_NAME);
 	auto &ble_server      = *NimBLEDevice::createServer();
 	auto &ble_hr_service  = *ble_server.createService(BLE_HR_SERVICE_UUID);
 	auto &ble_hr_char     = *ble_hr_service.createCharacteristic(BLE_HR_CHAR_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 16);
 	auto &ble_hr_raw_char = *ble_hr_service.createCharacteristic(BLE_HR_RAW_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 64);
-	// hr custom used to forward the raw MAX32664 data to the app
 
 	i2c_master_bus_config_t i2c_mst_config = {
 		.i2c_port          = I2C_NUM_0,
@@ -1195,6 +1195,8 @@ init_retry:
 	ble_hr_service.start();
 	auto &ble_advertising = *NimBLEDevice::getAdvertising();
 	ble_advertising.addServiceUUID(ble_hr_service.getUUID());
+	ble_advertising.setName(BLE_DEVICE_NAME);
+	ble_advertising.enableScanResponse(true);
 	ble_advertising.start();
 	ESP_LOGI(TAG, "BLE advertising started");
 
