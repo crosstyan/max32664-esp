@@ -1,6 +1,7 @@
 #include "esp_err.h"
 #include "esp_system.h"
 #include "max.hpp"
+#include <NimBLEDevice.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -67,6 +68,7 @@ void print_as_hex(std::span<const uint8_t> data) {
 
 // Wait timeout, in ms. Note: -1 means wait forever.
 constexpr auto DEFAULT_I2C_TIMEOUT_MS = 5'000;
+constexpr auto BLE_NAME               = "MAX-BAND";
 extern "C" [[noreturn]]
 void app_main();
 
@@ -319,14 +321,15 @@ void app_main() {
 				}
 				return ESP_OK;
 			};
+
 			// erase app
-			constexpr auto RETRY_DELAY_MS = 100;
+			constexpr auto RETRY_DELAY_MS = 1'000;
 			while (erase() != ESP_OK) {
 				delay_ms(RETRY_DELAY_MS);
 			}
 
 			ESP_LOGI(TAG, "app erased");
-			delay_ms(500);
+			delay_ms(400);
 
 			// send pages
 			wr_buf[0]       = max::flash::FMY_BL_W;

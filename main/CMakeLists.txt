@@ -13,4 +13,5 @@ idf_component_register(
         driver
         max_bl_flash
         expected
+        esp-nimble-cpp
         )

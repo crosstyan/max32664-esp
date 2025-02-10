@@ -1,3 +1,6 @@
 [submodule "components/expected/expected"]
 	path = components/expected/expected
 	url = https://github.com/TartanLlama/expected
+[submodule "components/esp-nimble-cpp"]
+	path = components/esp-nimble-cpp
+	url = https://github.com/h2zero/esp-nimble-cpp
