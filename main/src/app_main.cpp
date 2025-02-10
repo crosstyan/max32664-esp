@@ -515,7 +515,7 @@ init_retry:
 		return ESP_OK;
 	};
 
-	const auto write_afe_registers = [=](std::span<const uint8_t> buf) -> expected<uint8_t, esp_err_t> {
+	const auto hub_write_afe_registers = [=](std::span<const uint8_t> buf) -> expected<uint8_t, esp_err_t> {
 		using ue          = unexpected<esp_err_t>;
 		constexpr auto N  = 18;
 		constexpr auto NN = N - 2;
@@ -548,7 +548,7 @@ init_retry:
 
 		// set the sample rate to 100Hz with 1 sample averaging
 		afe_buf  = {0x12, 0x18};
-		auto res = write_afe_registers(afe_buf);
+		auto res = hub_write_afe_registers(afe_buf);
 		if (log_when_failed(TAG, "set sample rate", res)) {
 			return ESP_FAIL;
 		}
@@ -556,17 +556,17 @@ init_retry:
 		// set the LED current to half of full scale
 		// reduce the value if saturation is observed
 		afe_buf = {0x23, 0x7f};
-		if (log_when_failed(TAG, "set LED1 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED1 current", hub_write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
 		afe_buf = {0x24, 0x7f};
-		if (log_when_failed(TAG, "set LED2 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED2 current", hub_write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
 		afe_buf = {0x25, 0x7f};
-		if (log_when_failed(TAG, "set LED3 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED3 current", hub_write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
@@ -613,7 +613,7 @@ init_retry:
 		return *reinterpret_cast<SensorHubStatus *>(&buf[1]);
 	};
 
-	const auto sensor_hub_get_number_of_samples = [=] -> expected<uint8_t, esp_err_t> {
+	const auto hub_get_number_of_samples = [=] -> expected<uint8_t, esp_err_t> {
 		using ue = unexpected<esp_err_t>;
 		uint8_t buf[2];
 		esp_err_t esp_err = read_command(0x12, 0x00, buf);
@@ -691,7 +691,7 @@ init_retry:
 					 *reinterpret_cast<const uint8_t *>(&status));
 			return;
 		}
-		auto fifo_count_ = sensor_hub_get_number_of_samples();
+		auto fifo_count_ = hub_get_number_of_samples();
 		if (!fifo_count_) {
 			return;
 		}
@@ -833,7 +833,7 @@ init_retry:
 					 *reinterpret_cast<const uint8_t *>(&status));
 			return;
 		}
-		auto fifo_count_ = sensor_hub_get_number_of_samples();
+		auto fifo_count_ = hub_get_number_of_samples();
 		if (!fifo_count_) {
 			return;
 		}
