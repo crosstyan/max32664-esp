@@ -93,6 +93,18 @@ enum class FIFO_OUTPUT_MODE : uint8_t {
 	COUNTER_ALGO    = 0x06  // Sample counter byte + algorithm data
 };
 
+// belongs to the 0x50 0x07 command family
+constexpr uint8_t PREFIX_ALGO_RUN_MODE = 0x0A;
+enum class ALGO_RUN_MODE : uint8_t {
+	CONTINUOUS_HRM_CONTINUOUS_SPO2 = 0x00, // Continuous HRM, continuous SpO2
+	CONTINUOUS_HRM_ONE_SHOT_SPO2   = 0x01, // Continuous HRM, one-shot SpO2
+	CONTINUOUS_HRM                 = 0x02, // Continuous HRM
+	SAMPLED_HRM                    = 0x03, // Sampled HRM
+	SAMPLED_HRM_ONE_SHOT_SPO2      = 0x04, // Sampled HRM, one-shot SpO2
+	ACTIVITY_TRACKING_ONLY         = 0x05, // Activity tracking only
+	SPO2_CALIBRATION               = 0x06, // SpO2 calibration
+};
+
 
 const std::span<const uint8_t> msbl();
 const std::span<const uint8_t> auth_bytes();

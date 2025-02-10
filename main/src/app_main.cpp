@@ -171,15 +171,15 @@ void app_main() {
 		return ESP_OK;
 	};
 
-	// write register with external buffer (note that the first two bytes of `in` should be the family and index bytes)
-	const auto write_command_ext_buf =
+	// write register with external buffer, also fill the return value to the
+	// out buffer
+	const auto write_command_ext_buf_with_ret =
 		[dev_handle](
 			std::span<const uint8_t> in,
+			std::span<uint8_t> out,
 			uint16_t wait_time_ms = 2,
-			bool is_sleep_on_end  = false) -> expected<uint8_t, esp_err_t> {
-		using ue = unexpected<esp_err_t>;
+			bool is_sleep_on_end  = false) -> esp_err_t {
 		esp_err_t err;
-		uint8_t status = 0xff;
 
 		gpio_set_level(PIN_MFIO, 0);
 		delay_ms(1);
@@ -194,17 +194,36 @@ void app_main() {
 		err = i2c_master_transmit(dev_handle, in.data(), in.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			on_end();
-			return ue{err};
+			return err;
 		}
 		delay_ms(wait_time_ms);
-		err = i2c_master_receive(dev_handle, &status, 1, DEFAULT_I2C_TIMEOUT_MS);
+		err = i2c_master_receive(dev_handle, out.data(), out.size(), DEFAULT_I2C_TIMEOUT_MS);
 		if (err != ESP_OK) {
 			on_end();
-			return ue{err};
+			return err;
 		}
 		on_end();
-		return status;
+		return ESP_OK;
 	};
+
+	// write register with external buffer (note that the first two bytes of `in` should be the family and index bytes)
+	const auto write_command_ext_buf =
+		[write_command_ext_buf_with_ret](
+			std::span<const uint8_t> in,
+			uint16_t wait_time_ms = 2,
+			bool is_sleep_on_end  = false) -> expected<uint8_t, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		esp_err_t err;
+		// for status
+		uint8_t out[1];
+
+		err = write_command_ext_buf_with_ret(in, out, wait_time_ms, is_sleep_on_end);
+		if (err != ESP_OK) {
+			return ue{err};
+		}
+		return out[0];
+	};
+
 
 	// write register with a single byte of data
 	const auto write_command_byte =
@@ -435,11 +454,11 @@ init_retry:
 	// For hardware testing purposes, the user may choose to start the sensor hub to collect raw PPG
 	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
 	// by enabling the accelerometer and the AFE.
-	const auto set_fifo_mode = [=](flash::FIFO_OUTPUT_MODE mode) {
+	const auto hub_set_fifo_mode = [=](flash::FIFO_OUTPUT_MODE mode) {
 		return write_command_byte(0x10, 0x00, static_cast<uint8_t>(mode));
 	};
 
-	const auto set_fifo_threshold = [=](uint8_t threshold) {
+	const auto hub_set_fifo_threshold = [=](uint8_t threshold) {
 		return write_command_byte(0x10, 0x01, threshold);
 	};
 
@@ -450,7 +469,7 @@ init_retry:
 		EnableExtAccel  = 0x0101,
 	};
 
-	const auto enable_accel = [=](AccelSensorEn mode) {
+	const auto hub_enable_accel = [=](AccelSensorEn mode) {
 		// Sensor Mode Enable
 		// Enable accelerometer
 		const auto mode_val = static_cast<uint16_t>(mode);
@@ -471,8 +490,8 @@ init_retry:
 	// Integration time: 117μs
 	// ADCs 1 and 2 range: 32μA
 	// LEDs 1, 2, and 3 full range: 124mA
-	const auto enable_sensors = [=] -> esp_err_t {
-		auto err = enable_accel(AccelSensorEn::EnableHubAccel);
+	const auto hub_enable_sensors = [=] -> esp_err_t {
+		auto err = hub_enable_accel(AccelSensorEn::EnableHubAccel);
 		if (!err) {
 			ESP_LOGE(TAG, "failed to enable accelerometer; err=%s (%d)", esp_err_to_name(err.error()), err.error());
 			return err.error();
@@ -553,9 +572,9 @@ init_retry:
 
 	const auto app_raw_mode_init = [=] {
 		// set the output FIFO mode to Sensor data only.
-		set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_DATA);
-		set_fifo_threshold(0x02);
-		enable_sensors();
+		hub_set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_DATA);
+		hub_set_fifo_threshold(0x02);
+		hub_enable_sensors();
 		configure_afe();
 	};
 
@@ -679,6 +698,36 @@ init_retry:
 			ESP_LOGI(TAG, "sample(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ", %" PRIi16 ", %" PRIi16 ", %" PRIi16 ")", sample.green, sample.ir, sample.red, sample.accel_x, sample.accel_y, sample.accel_z);
 			fifo_count--;
 		}
+	};
+
+	// 0x00: invalid
+	// 0x01: 40ms
+	// 0x02: 80ms
+	// ...
+	// 0xff: 40ms * 255 (10.2s)
+	const auto hub_set_report_period = [=](uint8_t period_40ms) {
+		return write_command_byte(0x10, 0x02, period_40ms);
+	};
+
+	constexpr auto FMY_ALGO_CFG               = 0x50;
+	constexpr auto IDX_ALGO_CFG_WEARABLE_SUIT = 0x07;
+	const auto hub_aec_en                     = [=](bool en = true) {
+        uint8_t buf[] = {
+            FMY_ALGO_CFG,
+            IDX_ALGO_CFG_WEARABLE_SUIT,
+            0x0b,
+            en ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
+        };
+        return write_command_ext_buf(buf);
+	};
+
+	const auto algo_mode_init = [=] {
+		// set the output FIFO mode to Sensor data only.
+		hub_set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO);
+		hub_set_fifo_threshold(0x02);
+		hub_set_report_period(0x03); // 120ms
+		hub_enable_sensors();
+		hub_aec_en(true);
 	};
 
 	app_raw_mode_init();
