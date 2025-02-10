@@ -89,6 +89,15 @@ enum class ALGO_RUN_MODE : uint8_t {
 	ACTIVITY_TRACKING_ONLY         = 0x05, // Activity tracking only
 	SPO2_CALIBRATION               = 0x06, // SpO2 calibration
 };
+
+
+constexpr auto FMY_FIFO_OUTPUT_READ               = 0x12;
+constexpr auto IDX_FIFO_OUTPUT_READ_NUM_OF_SAMPLE = 0x0;
+constexpr auto IDX_FIFO_OUTPUT_READ_DATA          = 0x01;
+
+
+constexpr auto FMY_ALGO_CFG               = 0x50;
+constexpr auto IDX_ALGO_CFG_WEARABLE_SUIT = 0x07;
 } // namespace max
 
 #endif /* EE69DC8E_8AA5_4DAB_AB81_FC369B8A90CB */

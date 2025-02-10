@@ -72,6 +72,7 @@ void app_main();
 void app_main() {
 	using namespace app;
 	using namespace tl;
+	using namespace max;
 	constexpr auto TAG = "main";
 	delay_ms(200);
 
@@ -490,7 +491,7 @@ init_retry:
 	// Integration time: 117μs
 	// ADCs 1 and 2 range: 32μA
 	// LEDs 1, 2, and 3 full range: 124mA
-	const auto hub_enable_sensors = [=] -> esp_err_t {
+	const auto hub_user_enable_sensors = [=] -> esp_err_t {
 		auto err = hub_enable_accel(AccelSensorEn::EnableHubAccel);
 		if (!err) {
 			ESP_LOGE(TAG, "failed to enable accelerometer; err=%s (%d)", esp_err_to_name(err.error()), err.error());
@@ -527,43 +528,45 @@ init_retry:
 		std::ranges::copy(buf, buf_ext.begin() + 2);
 		return write_command_ext_buf(std::span(buf_ext.data(), buf_ext.size()), 100);
 	};
-	const auto configure_afe = [=] -> esp_err_t {
-		constexpr auto log_result = [](const char *entry, expected<uint8_t, esp_err_t> result) {
-			constexpr auto TAG = "afe";
-			if (!result) {
-				ESP_LOGE(TAG, "%s; err=%s (%d)", entry, esp_err_to_name(result.error()), result.error());
-				return false;
-			} else if (result.value() != max::SUCCESS) {
-				ESP_LOGE(TAG, "%s; status=%d", entry, result.value());
-				return false;
-			} else {
-				ESP_LOGI(TAG, "%s; success", entry);
-				return true;
-			}
-		};
+
+	// returns true if the operation failed, the result will be logged
+	constexpr auto log_when_failed = [](const char *tag, const char *entry, expected<uint8_t, esp_err_t> result) {
+		if (!result) {
+			ESP_LOGE(tag, "%s; err=%s (%d)", entry, esp_err_to_name(result.error()), result.error());
+			return true;
+		} else if (result.value() != max::SUCCESS) {
+			ESP_LOGE(tag, "%s; status=%d", entry, result.value());
+			return true;
+		} else {
+			ESP_LOGI(tag, "%s; success", entry);
+			return false;
+		}
+	};
+	const auto hub_user_configure_afe = [=] -> esp_err_t {
+		constexpr auto TAG             = "afe";
 		std::array<uint8_t, 2> afe_buf = {};
 
 		// set the sample rate to 100Hz with 1 sample averaging
 		afe_buf  = {0x12, 0x18};
 		auto res = write_afe_registers(afe_buf);
-		if (not log_result("set sample rate", res)) {
+		if (log_when_failed(TAG, "set sample rate", res)) {
 			return ESP_FAIL;
 		}
 
 		// set the LED current to half of full scale
 		// reduce the value if saturation is observed
 		afe_buf = {0x23, 0x7f};
-		if (not log_result("set LED1 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED1 current", write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
 		afe_buf = {0x24, 0x7f};
-		if (not log_result("set LED2 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED2 current", write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
 		afe_buf = {0x25, 0x7f};
-		if (not log_result("set LED3 current", write_afe_registers(afe_buf))) {
+		if (log_when_failed(TAG, "set LED3 current", write_afe_registers(afe_buf))) {
 			return ESP_FAIL;
 		}
 
@@ -571,11 +574,19 @@ init_retry:
 	};
 
 	const auto app_raw_mode_init = [=] {
-		// set the output FIFO mode to Sensor data only.
-		hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_DATA);
-		hub_set_fifo_threshold(0x02);
-		hub_enable_sensors();
-		configure_afe();
+		if (log_when_failed(TAG, "set FIFO mode", hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_DATA))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "set FIFO threshold", hub_set_fifo_threshold(0x02))) {
+			return ESP_FAIL;
+		}
+		if (const auto err = hub_user_enable_sensors(); err != ESP_OK) {
+			return err;
+		}
+		if (const auto err = hub_user_configure_afe(); err != ESP_OK) {
+			return err;
+		}
+		return ESP_OK;
 	};
 
 	struct SensorHubStatus {
@@ -587,7 +598,7 @@ init_retry:
 		bool dev_busy : 1;         // Bit 6: Sensor hub busy (DevBusy)
 		bool reserved_2 : 1;       // Bit 7: Reserved
 	} __attribute__((packed));
-	const auto sensor_hub_status = [=] -> expected<SensorHubStatus, esp_err_t> {
+	const auto hub_status = [=] -> expected<SensorHubStatus, esp_err_t> {
 		using ue = unexpected<esp_err_t>;
 		uint8_t buf[2];
 		esp_err_t esp_err = read_command(0x00, 0x00, buf);
@@ -650,16 +661,16 @@ init_retry:
 		}
 	};
 
-	const auto sensor_hub_read_sample = [=] -> expected<raw_sample_t, esp_err_t> {
+	const auto hub_read_raw_sample = [=] -> expected<raw_sample_t, esp_err_t> {
 		using ue = unexpected<esp_err_t>;
 		uint8_t buf[1 + RAW_SAMPLE_SIZE];
-		esp_err_t esp_err = read_command(0x12, 0x01, buf);
+		esp_err_t esp_err = read_command(max::FMY_FIFO_OUTPUT_READ, max::IDX_FIFO_OUTPUT_READ_DATA, buf);
 		if (esp_err != ESP_OK) {
-			ESP_LOGE(TAG, "failed to read sensor hub sample; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
+			ESP_LOGE(TAG, "failed to read raw sample; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
 			return ue{esp_err};
 		}
 		if (buf[0] != max::SUCCESS) {
-			ESP_LOGE(TAG, "failed to read sensor hub sample; status=%d", buf[0]);
+			ESP_LOGE(TAG, "failed to read raw sample; status=%d", buf[0]);
 			return ue{ESP_FAIL};
 		}
 		return raw_sample_t::unmarshal(std::span(buf + 1, RAW_SAMPLE_SIZE));
@@ -668,7 +679,7 @@ init_retry:
 	// Host reads samples periodically (do not execute at a faster rate than the samples report period)
 	// The host is required to periodically check the sensor hub for an available samples report. The default samples report period is 40ms which means sample rate is 25Hz
 	const auto app_raw_iter = [=] {
-		auto status_ = sensor_hub_status();
+		auto status_ = hub_status();
 		if (!status_) {
 			ESP_LOGE(TAG, "failed to get sensor hub status; err=%s (%d)", esp_err_to_name(status_.error()), status_.error());
 			return;
@@ -690,13 +701,7 @@ init_retry:
 			return;
 		}
 		while (fifo_count > 0) {
-			auto sample_ = sensor_hub_read_sample();
-			if (!sample_) {
-				return;
-			}
-			const auto sample = *sample_;
-			ESP_LOGI(TAG, "sample(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ", %" PRIi16 ", %" PRIi16 ", %" PRIi16 ")", sample.green, sample.ir, sample.red, sample.accel_x, sample.accel_y, sample.accel_z);
-			fifo_count--;
+			auto sample_ = hub_read_raw_sample();
 		}
 	};
 
@@ -709,31 +714,145 @@ init_retry:
 		return write_command_byte(0x10, 0x02, period_40ms);
 	};
 
-	constexpr auto FMY_ALGO_CFG               = 0x50;
-	constexpr auto IDX_ALGO_CFG_WEARABLE_SUIT = 0x07;
-	const auto hub_aec_en                     = [=](bool en = true) {
-        uint8_t buf[] = {
-            FMY_ALGO_CFG,
-            IDX_ALGO_CFG_WEARABLE_SUIT,
-            0x0b,
-            en ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
-        };
-        return write_command_ext_buf(buf);
+	const auto hub_algo_aec_en = [=](bool en = true) {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x0b,
+			en ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
+		};
+		return write_command_ext_buf(buf);
 	};
+
+	const auto hub_algo_mode = [=](max::ALGO_RUN_MODE mode) {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x0a,
+			static_cast<uint8_t>(mode),
+		};
+		return write_command_ext_buf(buf);
+	};
+
+	const auto hub_algo_pd_current_calculation = [=](bool en = false) {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x12,
+			en ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
+		};
+		return write_command_ext_buf(buf);
+	};
+
+	const auto hub_algo_scd_en = [=](bool en = true) {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x0c,
+			en ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
+		};
+		return write_command_ext_buf(buf);
+	};
+
+	// (16-bit unsigned integer, 0.1mA)
+	const auto hub_algo_set_agc_target_pd_current = [=](uint16_t current) {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x11,
+			static_cast<uint8_t>(current >> 8),
+			static_cast<uint8_t>(current & 0xff),
+		};
+		return write_command_ext_buf(buf);
+	};
+
+	const auto hub_algo_report_normal_en = [=]() {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x01,
+		};
+		return write_command_ext_buf(buf, 465);
+	};
+
+	const auto hub_algo_report_extended_en = [=]() {
+		uint8_t buf[] = {
+			FMY_ALGO_CFG,
+			IDX_ALGO_CFG_WEARABLE_SUIT,
+			0x02,
+		};
+		return write_command_ext_buf(buf, 465);
+	};
+
 
 	const auto algo_mode_init = [=] {
-		// set the output FIFO mode to Sensor data only.
-		hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO);
-		hub_set_fifo_threshold(0x02);
-		hub_set_report_period(0x03); // 120ms
-		hub_enable_sensors();
-		hub_aec_en(true);
+		constexpr auto TAG = "algo_init";
+		if (log_when_failed(TAG, "set FIFO mode", hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "set FIFO threshold", hub_set_fifo_threshold(0x02))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "set report period", hub_set_report_period(0x03))) {
+			return ESP_FAIL;
+		}
+		if (const auto err = hub_user_enable_sensors(); err != ESP_OK) {
+			return err;
+		}
+		if (log_when_failed(TAG, "enable AEC", hub_algo_aec_en(true))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "set algo mode", hub_algo_mode(max::ALGO_RUN_MODE::CONTINUOUS_HRM))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "disable PD current calculation", hub_algo_pd_current_calculation(false))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "enable SCD", hub_algo_scd_en(true))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "set AGC target PD current to 10mA", hub_algo_set_agc_target_pd_current(100))) {
+			return ESP_FAIL;
+		}
+		if (log_when_failed(TAG, "enable report normal", hub_algo_report_normal_en())) {
+			return ESP_FAIL;
+		}
+		return ESP_OK;
 	};
 
-	app_raw_mode_init();
-	ESP_LOGI(TAG, "raw mode initialized");
+	const auto algo_iter = [=]() {
+		const auto status_ = hub_status();
+		if (!status_) {
+			ESP_LOGE(TAG, "failed to get sensor hub status; err=%s (%d)", esp_err_to_name(status_.error()), status_.error());
+			return;
+		}
+		const auto status = *status_;
+		if (not status.data_rdy_int) {
+			ESP_LOGE(TAG, "no data; status(comm_error=%d, data_rdy_int=%d, fifo_out_ovr_int=%d, fifo_in_ovr_int=%d, dev_busy=%d) (0x%02x)",
+					 status.comm_error, status.data_rdy_int, status.fifo_out_ovr_int, status.fifo_in_ovr_int, status.dev_busy,
+					 *reinterpret_cast<const uint8_t *>(&status));
+			return;
+		}
+		auto fifo_count_ = sensor_hub_get_number_of_samples();
+		if (!fifo_count_) {
+			return;
+		}
+		auto fifo_count = *fifo_count_;
+		if (fifo_count == 0) {
+			ESP_LOGE(TAG, "sensor hub FIFO is empty");
+			return;
+		}
+		while (fifo_count > 0) {
+			// TODO
+		}
+	};
+
+	// app_raw_mode_init();
+	algo_mode_init();
+	ESP_LOGI(TAG, "initialized");
 	while (true) {
 		delay_ms(100);
-		app_raw_iter();
+		// app_raw_iter();
+		algo_iter();
 	}
 }
