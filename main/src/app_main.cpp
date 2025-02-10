@@ -1,6 +1,7 @@
 #include "esp_err.h"
 #include "esp_system.h"
 #include "max.hpp"
+#include "instant.hpp"
 #include <NimBLEDevice.h>
 #include <algorithm>
 #include <cstdint>
@@ -64,11 +65,19 @@ void print_as_hex(std::span<const uint8_t> data) {
 		}
 	}
 }
+
+template <typename T>
+std::span<const uint8_t> as_bytes(const T &value) {
+	return std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(&value), sizeof(value));
+}
 } // namespace app
 
 // Wait timeout, in ms. Note: -1 means wait forever.
 constexpr auto DEFAULT_I2C_TIMEOUT_MS = 5'000;
-constexpr auto BLE_NAME               = "MAX-BAND";
+constexpr auto BLE_DEVICE_NAME        = "MAX-BAND";
+constexpr auto BLE_HR_SERVICE_UUID    = "180D";
+constexpr auto BLE_HR_CHAR_UUID       = "2A37";
+constexpr auto BLE_HR_RAW_UUID        = "c4f5233d-430a-4ca1-bb60-1d896c10e807";
 extern "C" [[noreturn]]
 void app_main();
 
@@ -78,7 +87,12 @@ void app_main() {
 	using namespace tl;
 	using namespace max;
 	constexpr auto TAG = "main";
-	delay_ms(200);
+	NimBLEDevice::init(BLE_DEVICE_NAME);
+	auto &ble_server      = *NimBLEDevice::createServer();
+	auto &ble_hr_service  = *ble_server.createService(BLE_HR_SERVICE_UUID);
+	auto &ble_hr_char     = *ble_hr_service.createCharacteristic(BLE_HR_CHAR_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 16);
+	auto &ble_hr_raw_char = *ble_hr_service.createCharacteristic(BLE_HR_RAW_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 64);
+	// hr custom used to forward the raw MAX32664 data to the app
 
 	i2c_master_bus_config_t i2c_mst_config = {
 		.i2c_port          = I2C_NUM_0,
@@ -1001,7 +1015,7 @@ init_retry:
 
 
 	constexpr auto ALGO_REPORT_DATA_SIZE = RAW_SAMPLE_SIZE + sizeof(algo_model_data_t);
-	struct algo_report_t {
+	struct __attribute__((packed)) algo_report_t {
 		uint32_t led_1;
 		uint32_t led_2;
 		uint32_t led_3;
@@ -1064,7 +1078,63 @@ init_retry:
 		return raw;
 	};
 
+	// LSB first
+	struct ble_hr_measurement_flag_t {
+		// 0: uint8_t
+		// 1: uint16_t
+		bool heart_rate_value_format : 1;
+		bool sensor_contact_detected : 1;
+		bool sensor_contact_supported : 1;
+		bool energy_expended_present : 1;
+		bool rr_interval_present : 1;
+		uint8_t reserved : 3;
+	};
+	static_assert(sizeof(ble_hr_measurement_flag_t) == 1);
+
+	// Structure of the Heart Rate Measurement characteristic
+	// refer to section 3.116 Heart Rate Measurement of the document: GATT Specification Supplement.
+	// https://www.bluetooth.com/specifications/gss/
+	const auto ble_hr_char_notify = [&ble_hr_char](const algo_report_t &report) {
+		ble_hr_measurement_flag_t flags = {
+			false,
+			false,
+			true,
+			false,
+			false,
+			0};
+		if (report.data.hr_conf < 25) {
+			return;
+		}
+		uint8_t buf_[4];
+		auto buf = std::span(buf_, 2);
+
+		const uint8_t hr_value = (report.data.hr / 10) & 0xFF;
+		if (report.data.scd_contact_state == max::SCD_STATE::ON_SKIN) {
+			flags.sensor_contact_detected = true;
+		}
+		if (report.data.rr_conf >= 25) {
+			flags.rr_interval_present = true;
+			buf                       = std::span(buf_, 4);
+			uint16_t rr_value         = report.data.rr / 10;
+			// All fields in a characteristic or descriptor are little endian
+			// unless otherwise stated in BLE specification
+			buf[2] = rr_value & 0xff;
+			buf[3] = rr_value >> 8;
+		}
+		buf[0] = *reinterpret_cast<const uint8_t *>(&flags);
+		buf[1] = hr_value;
+
+		ble_hr_char.setValue(buf);
+		ble_hr_char.notify();
+	};
+
+	const auto ble_hr_raw_char_notify = [&ble_hr_raw_char](std::span<const uint8_t> buf) {
+		ble_hr_raw_char.setValue(buf);
+		ble_hr_raw_char.notify();
+	};
+
 	const auto algo_iter = [=]() {
+		static Instant debug_print_inst{};
 		const auto status_ = hub_status();
 		if (!status_) {
 			ESP_LOGE(TAG, "failed to get sensor hub status; err=%s (%d)", esp_err_to_name(status_.error()), status_.error());
@@ -1093,36 +1163,46 @@ init_retry:
 				return;
 			}
 			const auto report = *report_;
-			ESP_LOGI(TAG, "ir=%" PRIu32 " green=%" PRIu32 " red=%" PRIu32 " accel=[%" PRIi16 ", %" PRIi16 ", %" PRIi16 "] "
-						  "hr=%.1f conf=%d%% rr=%.1f rr_conf=%d%% activity=%s "
-						  "spo2=%.1f%% spo2_conf=%d%% r=%.3f "
-						  "flags(low_sig=%d motion=%d low_pi=%d r_unreliable=%d) "
-						  "spo2_state=%s scd_state=%s",
-					 report.led_1, report.led_2, report.led_3,
-					 report.accel_x, report.accel_y, report.accel_z,
-					 report.data.hr_f(),
-					 report.data.hr_conf,
-					 report.data.rr_f(),
-					 report.data.rr_conf,
-					 max::activate_class_to_string(report.data.activity_class),
-					 report.data.spo2_f(),
-					 report.data.spo2_conf,
-					 report.data.r_f(),
-					 report.data.spo2_low_signal_quality_flag,
-					 report.data.spo2_motion_flag,
-					 report.data.spo2_low_pi_flag,
-					 report.data.spo2_unreliable_r_flag,
-					 max::spo2_state_to_string(report.data.spo2_state),
-					 max::scd_state_to_string(report.data.scd_contact_state));
+			ble_hr_char_notify(report);
+			ble_hr_raw_char_notify(as_bytes(report));
+			if (debug_print_inst.mut_every_ms(1'000)) {
+				ESP_LOGI(TAG, "ir=%" PRIu32 " green=%" PRIu32 " red=%" PRIu32 " accel=[%" PRIi16 ", %" PRIi16 ", %" PRIi16 "] "
+							  "hr=%.1f conf=%d%% rr=%.1f rr_conf=%d%% activity=%s "
+							  "spo2=%.1f%% spo2_conf=%d%% r=%.3f "
+							  "flags(low_sig=%d motion=%d low_pi=%d r_unreliable=%d) "
+							  "spo2_state=%s scd_state=%s",
+						 report.led_1, report.led_2, report.led_3,
+						 report.accel_x, report.accel_y, report.accel_z,
+						 report.data.hr_f(),
+						 report.data.hr_conf,
+						 report.data.rr_f(),
+						 report.data.rr_conf,
+						 max::activate_class_to_string(report.data.activity_class),
+						 report.data.spo2_f(),
+						 report.data.spo2_conf,
+						 report.data.r_f(),
+						 report.data.spo2_low_signal_quality_flag,
+						 report.data.spo2_motion_flag,
+						 report.data.spo2_low_pi_flag,
+						 report.data.spo2_unreliable_r_flag,
+						 max::spo2_state_to_string(report.data.spo2_state),
+						 max::scd_state_to_string(report.data.scd_contact_state));
+			}
 			fifo_count--;
 		}
 	};
 
+	ble_hr_service.start();
+	auto &ble_advertising = *NimBLEDevice::getAdvertising();
+	ble_advertising.addServiceUUID(ble_hr_service.getUUID());
+	ble_advertising.start();
+	ESP_LOGI(TAG, "BLE advertising started");
+
 	// app_raw_mode_init();
 	algo_mode_init();
-	ESP_LOGI(TAG, "initialized");
+	ESP_LOGI(TAG, "MAX32664 initialized");
 	while (true) {
-		delay_ms(240);
+		delay_ms(40);
 		// app_raw_iter();
 		algo_iter();
 	}
