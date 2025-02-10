@@ -463,17 +463,7 @@ init_retry:
 		goto init_retry;
 	}
 
-	// Automatic Exposure Control (AEC) is Maxim's gain control algorithm that is superior to AGC. The
-	// AEC algorithm optimally maintains the best SNR range and power optimization. The targeted
-	// SNR range is maintained regardless of skin color or ambient temperature within the limits of the
-	// LED currents configurations; The AEC dynamically manages the appropriate register settings for
-	// sampling rate, LED current, pulse width and integration time.
 
-	// Skin contact detector (SCD)
-
-	// For hardware testing purposes, the user may choose to start the sensor hub to collect raw PPG
-	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
-	// by enabling the accelerometer and the AFE.
 	const auto hub_set_fifo_mode = [=](max::FIFO_OUTPUT_MODE mode) {
 		return write_command_byte(0x10, 0x00, static_cast<uint8_t>(mode));
 	};
@@ -592,6 +582,9 @@ init_retry:
 		return ESP_OK;
 	};
 
+	// For hardware testing purposes, the user may choose to start the sensor hub to collect raw PPG
+	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
+	// by enabling the accelerometer and the AFE.
 	const auto app_raw_mode_init = [=] {
 		if (log_when_failed(TAG, "set FIFO mode", hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_DATA))) {
 			return ESP_FAIL;
@@ -737,6 +730,11 @@ init_retry:
 		return write_command_byte(0x10, 0x02, period_40ms);
 	};
 
+	// Automatic Exposure Control (AEC) is Maxim's gain control algorithm that is superior to AGC. The
+	// AEC algorithm optimally maintains the best SNR range and power optimization. The targeted
+	// SNR range is maintained regardless of skin color or ambient temperature within the limits of the
+	// LED currents configurations; The AEC dynamically manages the appropriate register settings for
+	// sampling rate, LED current, pulse width and integration time.
 	const auto hub_algo_aec_en = [=](bool en = true) {
 		uint8_t buf[] = {
 			FMY_ALGO_CFG,
@@ -896,11 +894,10 @@ init_retry:
 		if (log_when_failed(TAG, "set FIFO mode", hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO))) {
 			return ESP_FAIL;
 		}
-		if (log_when_failed(TAG, "set FIFO threshold", hub_set_fifo_threshold(0x02))) {
+		if (log_when_failed(TAG, "set FIFO threshold", hub_set_fifo_threshold(0x01))) {
 			return ESP_FAIL;
 		}
-		// 120ms
-		if (log_when_failed(TAG, "set report period", hub_set_report_period(0x03))) {
+		if (log_when_failed(TAG, "set report period", hub_set_report_period(0x01))) {
 			return ESP_FAIL;
 		}
 		if (const auto err = hub_user_enable_sensors(); err != ESP_OK) {
@@ -922,7 +919,6 @@ init_retry:
 		if (log_when_failed(TAG, "enable SCD", hub_algo_scd_en(true))) {
 			return ESP_FAIL;
 		}
-		// 10mA
 		if (log_when_failed(TAG, "set AGC target PD current",
 							hub_algo_set_agc_target_pd_current(1000))) {
 			return ESP_FAIL;

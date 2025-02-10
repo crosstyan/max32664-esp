@@ -104,6 +104,7 @@ enum class SPO2_STATE : uint8_t {
 	TIMEOUT,
 };
 
+// Skin contact detector (SCD)
 enum class SCD_STATE : uint8_t {
 	UNDETECTED,
 	OFF_SKIN,
