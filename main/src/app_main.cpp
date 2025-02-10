@@ -235,13 +235,13 @@ void app_main() {
 		};
 
 	const auto write_bootloader = [=]() {
-		constexpr auto OK  = flash::SUCCESS;
+		constexpr auto OK  = max::SUCCESS;
 		constexpr auto TAG = "bl";
 		{
 			uint8_t out[2]{};
-			esp_err_t err = read_command(flash::FMY_DEV_MODE_R, flash::IDX_DEV_MODE_R, out, 10);
+			esp_err_t err = read_command(max::FMY_DEV_MODE_R, max::IDX_DEV_MODE_R, out, 10);
 			ESP_ERROR_CHECK(err);
-			if (auto status = out[0]; out[1] != flash::DEV_MODE_R_BL || status != OK) {
+			if (auto status = out[0]; out[1] != max::DEV_MODE_R_BL || status != OK) {
 				ESP_LOGE(TAG, "query error or not in bootloader mode; out(mode)=(0x%02x, %d)", out[0], out[1]);
 				return ESP_FAIL;
 			}
@@ -259,9 +259,9 @@ void app_main() {
 			}
 		}
 		{
-			const auto num_of_pages = flash::number_of_pages();
+			const auto num_of_pages = max::flash::number_of_pages();
 			// write number of page
-			const uint8_t in[] = {flash::FMY_BL_W, flash::IDX_BL_W_PAGE_NUM, 0x00, num_of_pages};
+			const uint8_t in[] = {max::flash::FMY_BL_W, max::flash::IDX_BL_W_PAGE_NUM, 0x00, num_of_pages};
 			auto status        = write_command_ext_buf(in);
 			if (!status) {
 				ESP_LOGE(TAG, "failed to write number of pages; write_command_ext_buf error=%d", status.error());
@@ -273,13 +273,13 @@ void app_main() {
 			ESP_LOGI(TAG, "number of pages %d written", num_of_pages);
 
 			// use heap to avoid stack overflow, use unique_ptr to enable RAII behavior
-			auto wr_buf_ptr   = std::make_unique<uint8_t[]>(2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
-			const auto wr_buf = std::span(wr_buf_ptr.get(), 2 + flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE);
+			auto wr_buf_ptr   = std::make_unique<uint8_t[]>(2 + max::flash::MAX_PAGE_SIZE + max::flash::CHECKBYTES_SIZE);
+			const auto wr_buf = std::span(wr_buf_ptr.get(), 2 + max::flash::MAX_PAGE_SIZE + max::flash::CHECKBYTES_SIZE);
 			// write nonce
-			wr_buf[0] = flash::FMY_BL_W;
-			wr_buf[1] = flash::IDX_BL_W_NONCE;
-			std::ranges::copy(flash::init_vector_bytes(), wr_buf.data() + 2);
-			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::init_vector_bytes().size()));
+			wr_buf[0] = max::flash::FMY_BL_W;
+			wr_buf[1] = max::flash::IDX_BL_W_NONCE;
+			std::ranges::copy(max::flash::init_vector_bytes(), wr_buf.data() + 2);
+			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + max::flash::init_vector_bytes().size()));
 			if (!status) {
 				ESP_LOGE(TAG, "failed to write nonce; write_command_ext_buf error=%d", status.error());
 				return status.error();
@@ -290,10 +290,10 @@ void app_main() {
 			ESP_LOGI(TAG, "nonce written");
 
 			// write auth
-			wr_buf[0] = flash::FMY_BL_W;
-			wr_buf[1] = flash::IDX_BL_W_AUTH;
-			std::ranges::copy(flash::auth_bytes(), wr_buf.data() + 2);
-			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + flash::auth_bytes().size()), 10);
+			wr_buf[0] = max::flash::FMY_BL_W;
+			wr_buf[1] = max::flash::IDX_BL_W_AUTH;
+			std::ranges::copy(max::flash::auth_bytes(), wr_buf.data() + 2);
+			status = write_command_ext_buf(std::span(wr_buf.data(), 2 + max::flash::auth_bytes().size()), 10);
 			if (!status) {
 				ESP_LOGE(TAG, "failed to write auth; write_command_ext_buf error=%d", status.error());
 				return status.error();
@@ -304,8 +304,8 @@ void app_main() {
 			ESP_LOGI(TAG, "auth written");
 
 			const auto erase = [=]() {
-				wr_buf[0]   = flash::FMY_BL_W;
-				wr_buf[1]   = flash::IDX_BL_W_ERASE_APP;
+				wr_buf[0]   = max::flash::FMY_BL_W;
+				wr_buf[1]   = max::flash::IDX_BL_W_ERASE_APP;
 				auto status = write_command_ext_buf(std::span(wr_buf.data(), 2), 1'400);
 				if (!status) {
 					ESP_LOGE(TAG, "failed to erase app; write_command_ext_buf error=%d", status.error());
@@ -326,12 +326,12 @@ void app_main() {
 			delay_ms(500);
 
 			// send pages
-			wr_buf[0]       = flash::FMY_BL_W;
-			wr_buf[1]       = flash::IDX_BL_W_SEND_PAGE;
-			uint32_t offset = flash::APP_START_OFFSET;
+			wr_buf[0]       = max::flash::FMY_BL_W;
+			wr_buf[1]       = max::flash::IDX_BL_W_SEND_PAGE;
+			uint32_t offset = max::flash::APP_START_OFFSET;
 			for (uint16_t i = 0; i < num_of_pages; i++) {
-				constexpr auto PAGE_SIZE = flash::MAX_PAGE_SIZE + flash::CHECKBYTES_SIZE;
-				const auto page          = flash::msbl().subspan(offset + i * PAGE_SIZE, PAGE_SIZE);
+				constexpr auto PAGE_SIZE = max::flash::MAX_PAGE_SIZE + max::flash::CHECKBYTES_SIZE;
+				const auto page          = max::flash::msbl().subspan(offset + i * PAGE_SIZE, PAGE_SIZE);
 				printf("first 16 bytes of page %d=", i);
 				print_as_hex(page.subspan(0, 16));
 				printf("last 16 bytes of page %d=", i);
@@ -357,7 +357,7 @@ void app_main() {
 		}
 
 		ESP_LOGI(TAG, "bootloader written");
-		auto status = write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_EXIT_BL, 50);
+		auto status = write_command_byte(max::FMY_DEV_MODE_W, max::IDX_DEV_MODE_W, max::DEV_MODE_W_EXIT_BL, 50);
 		if (!status) {
 			ESP_LOGE(TAG, "failed to exit bootloader; write_command_byte error=%d", status.error());
 			return status.error();
@@ -370,16 +370,16 @@ void app_main() {
 
 
 init_retry:
-	flash::DevModeR mode = flash::DEV_MODE_R_APP;
+	max::DevModeR mode = max::DEV_MODE_R_APP;
 	{
 		uint8_t out[2];
-		auto esp_err = read_command(flash::FMY_DEV_MODE_R, flash::IDX_DEV_MODE_R, out, 10);
-		if (auto status = out[0]; esp_err != ESP_OK || status != flash::SUCCESS) {
+		auto esp_err = read_command(max::FMY_DEV_MODE_R, max::IDX_DEV_MODE_R, out, 10);
+		if (auto status = out[0]; esp_err != ESP_OK || status != max::SUCCESS) {
 			ESP_LOGW(TAG, "err='%s'(%d), mode=(%d, %d)", esp_err_to_name(esp_err), status, out[0], out[1]);
 			delay_ms(1'000);
 			goto init_retry;
 		}
-		mode = static_cast<flash::DevModeR>(out[1]);
+		mode = static_cast<max::DevModeR>(out[1]);
 	}
 
 	const auto enter_bootloader_by_pin = [] {
@@ -395,22 +395,22 @@ init_retry:
 		delay_ms(60);
 	};
 	const auto enter_bootloader_by_command = [=]() {
-		return write_command_byte(flash::FMY_DEV_MODE_W, flash::IDX_DEV_MODE_W, flash::DEV_MODE_W_ENTER_BL, 50);
+		return write_command_byte(max::FMY_DEV_MODE_W, max::IDX_DEV_MODE_W, max::DEV_MODE_W_ENTER_BL, 50);
 	};
 
 	// check version/bootloader mode, decide whether to write the bootloader
-	if (mode == flash::DEV_MODE_R_BL) {
+	if (mode == max::DEV_MODE_R_BL) {
 		ESP_LOGW(TAG, "I'm in bootloader mode. try to write application to the chip.");
-		const auto msbl = flash::msbl();
+		const auto msbl = max::flash::msbl();
 		ESP_LOGI(TAG, "msbl.size()=%d", msbl.size());
-		printf("auth_bytes(%d)=", flash::auth_bytes().size());
-		print_as_hex(flash::auth_bytes());
-		printf("init_vector(%d)=", flash::init_vector_bytes().size());
-		print_as_hex(flash::init_vector_bytes());
-		ESP_LOGI(TAG, "number_of_pages=%d", flash::number_of_pages());
+		printf("auth_bytes(%d)=", max::flash::auth_bytes().size());
+		print_as_hex(max::flash::auth_bytes());
+		printf("init_vector(%d)=", max::flash::init_vector_bytes().size());
+		print_as_hex(max::flash::init_vector_bytes());
+		ESP_LOGI(TAG, "number_of_pages=%d", max::flash::number_of_pages());
 		write_bootloader();
 		esp_restart();
-	} else if (mode == flash::DEV_MODE_R_APP) {
+	} else if (mode == max::DEV_MODE_R_APP) {
 		esp_err_t esp_err;
 		ESP_LOGI(TAG, "app mode");
 		uint8_t version[4];
@@ -420,7 +420,7 @@ init_retry:
 		const auto status = version[0];
 		// MAX32664C_HSP2_WHRM_AEC_SCD_WSPO2_C_30.13.31
 		constexpr auto EXPECTED_VERSION_TUPLE = std::array<uint8_t, 3>{30, 13, 31};
-		if (esp_err != ESP_OK || status != flash::SUCCESS) {
+		if (esp_err != ESP_OK || status != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to read version; esp_err=%s(%d), status=%d", esp_err_to_name(esp_err), esp_err, status);
 			delay_ms(1'000);
 			goto init_retry;
@@ -443,7 +443,7 @@ init_retry:
 		goto init_retry;
 	}
 
-	// Automatic Exposure Control (AEC) is Maxim’s gain control algorithm that is superior to AGC. The
+	// Automatic Exposure Control (AEC) is Maxim's gain control algorithm that is superior to AGC. The
 	// AEC algorithm optimally maintains the best SNR range and power optimization. The targeted
 	// SNR range is maintained regardless of skin color or ambient temperature within the limits of the
 	// LED currents configurations; The AEC dynamically manages the appropriate register settings for
@@ -454,7 +454,7 @@ init_retry:
 	// For hardware testing purposes, the user may choose to start the sensor hub to collect raw PPG
 	// samples. In this case, the host configures the sensor hub to work in Raw Data mode (no algorithm)
 	// by enabling the accelerometer and the AFE.
-	const auto hub_set_fifo_mode = [=](flash::FIFO_OUTPUT_MODE mode) {
+	const auto hub_set_fifo_mode = [=](max::FIFO_OUTPUT_MODE mode) {
 		return write_command_byte(0x10, 0x00, static_cast<uint8_t>(mode));
 	};
 
@@ -496,7 +496,7 @@ init_retry:
 			ESP_LOGE(TAG, "failed to enable accelerometer; err=%s (%d)", esp_err_to_name(err.error()), err.error());
 			return err.error();
 		}
-		if (err.value() != flash::SUCCESS) {
+		if (err.value() != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to enable accelerometer; status=%d", err.value());
 			return ESP_FAIL;
 		}
@@ -507,7 +507,7 @@ init_retry:
 			ESP_LOGE(TAG, "failed to enable AFE; err=%s (%d)", esp_err_to_name(err.error()), err.error());
 			return err.error();
 		}
-		if (err.value() != flash::SUCCESS) {
+		if (err.value() != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to enable AFE; status=%d", err.value());
 			return ESP_FAIL;
 		}
@@ -533,7 +533,7 @@ init_retry:
 			if (!result) {
 				ESP_LOGE(TAG, "%s; err=%s (%d)", entry, esp_err_to_name(result.error()), result.error());
 				return false;
-			} else if (result.value() != flash::SUCCESS) {
+			} else if (result.value() != max::SUCCESS) {
 				ESP_LOGE(TAG, "%s; status=%d", entry, result.value());
 				return false;
 			} else {
@@ -572,7 +572,7 @@ init_retry:
 
 	const auto app_raw_mode_init = [=] {
 		// set the output FIFO mode to Sensor data only.
-		hub_set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_DATA);
+		hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_DATA);
 		hub_set_fifo_threshold(0x02);
 		hub_enable_sensors();
 		configure_afe();
@@ -595,7 +595,7 @@ init_retry:
 			ESP_LOGE(TAG, "failed to read sensor hub status; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
 			return ue{esp_err};
 		}
-		if (buf[0] != flash::SUCCESS) {
+		if (buf[0] != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to read sensor hub status; status=%d", buf[0]);
 			return ue{ESP_FAIL};
 		}
@@ -610,7 +610,7 @@ init_retry:
 			ESP_LOGE(TAG, "failed to read sensor hub number of samples; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
 			return ue{esp_err};
 		}
-		if (buf[0] != flash::SUCCESS) {
+		if (buf[0] != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to read sensor hub number of samples; status=%d", buf[0]);
 			return ue{ESP_FAIL};
 		}
@@ -658,7 +658,7 @@ init_retry:
 			ESP_LOGE(TAG, "failed to read sensor hub sample; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
 			return ue{esp_err};
 		}
-		if (buf[0] != flash::SUCCESS) {
+		if (buf[0] != max::SUCCESS) {
 			ESP_LOGE(TAG, "failed to read sensor hub sample; status=%d", buf[0]);
 			return ue{ESP_FAIL};
 		}
@@ -723,7 +723,7 @@ init_retry:
 
 	const auto algo_mode_init = [=] {
 		// set the output FIFO mode to Sensor data only.
-		hub_set_fifo_mode(flash::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO);
+		hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO);
 		hub_set_fifo_threshold(0x02);
 		hub_set_report_period(0x03); // 120ms
 		hub_enable_sensors();
