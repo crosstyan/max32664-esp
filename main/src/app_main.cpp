@@ -712,7 +712,11 @@ init_retry:
 	// 0x02: 80ms
 	// ...
 	// 0xff: 40ms * 255 (10.2s)
-	const auto hub_set_report_period = [=](uint8_t period_40ms) {
+	const auto hub_set_report_period = [=](uint8_t period_40ms) -> expected<uint8_t, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		if (period_40ms == 0) {
+			return ue{ESP_ERR_INVALID_ARG};
+		}
 		return write_command_byte(0x10, 0x02, period_40ms);
 	};
 
