@@ -24,7 +24,7 @@ enum DevModeR : uint8_t {
 };
 
 // https://github.com/analogdevicesinc/MAX32630FTHR_msbl_flasher/blob/52cafd7d589991550876703d88ccfc902a4badbd/api.py#L47-L60
-enum StatusCode : uint8_t {
+enum STATUS_CODE : uint8_t {
 	// The write transaction was successful.
 	SUCCESS = 0x00,
 	/// Illegal Family Byte and/or Index Byte was used.
@@ -80,7 +80,7 @@ enum class FIFO_OUTPUT_MODE : uint8_t {
 
 // belongs to the 0x50 0x07 command family
 constexpr uint8_t PREFIX_ALGO_RUN_MODE = 0x0A;
-enum class ALGO_RUN_MODE : uint8_t {
+enum class ALGO_OP_MODE : uint8_t {
 	CONTINUOUS_HRM_CONTINUOUS_SPO2 = 0x00, // Continuous HRM, continuous SpO2
 	CONTINUOUS_HRM_ONE_SHOT_SPO2   = 0x01, // Continuous HRM, one-shot SpO2
 	CONTINUOUS_HRM                 = 0x02, // Continuous HRM
@@ -90,6 +90,71 @@ enum class ALGO_RUN_MODE : uint8_t {
 	SPO2_CALIBRATION               = 0x06, // SpO2 calibration
 };
 
+enum class ACTIVATE_CLASS : uint8_t {
+	REST,
+	WALK,
+	RUN,
+	BIKE,
+};
+
+enum class SPO2_STATE : uint8_t {
+	LED_ADJUSTMENT,
+	COMPUTATION,
+	SUCCESS,
+	TIMEOUT,
+};
+
+enum class SCD_STATE : uint8_t {
+	UNDETECTED,
+	OFF_SKIN,
+	ON_SOME_SUBJECT,
+	ON_SKIN,
+};
+
+inline const char *activate_class_to_string(ACTIVATE_CLASS c) {
+	switch (c) {
+	case ACTIVATE_CLASS::REST:
+		return "REST";
+	case ACTIVATE_CLASS::WALK:
+		return "WALK";
+	case ACTIVATE_CLASS::RUN:
+		return "RUN";
+	case ACTIVATE_CLASS::BIKE:
+		return "BIKE";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+inline const char *scd_state_to_string(SCD_STATE state) {
+	switch (state) {
+	case SCD_STATE::UNDETECTED:
+		return "UNDETECTED";
+	case SCD_STATE::OFF_SKIN:
+		return "OFF_SKIN";
+	case SCD_STATE::ON_SOME_SUBJECT:
+		return "ON_SOME_SUBJECT";
+	case SCD_STATE::ON_SKIN:
+		return "ON_SKIN";
+	default:
+		return "UNKNOWN";
+	};
+}
+
+inline const char *spo2_state_to_string(SPO2_STATE state) {
+	switch (state) {
+	case SPO2_STATE::LED_ADJUSTMENT:
+		return "LED_ADJUSTMENT";
+	case SPO2_STATE::COMPUTATION:
+		return "COMPUTATION";
+	case SPO2_STATE::SUCCESS:
+		return "SUCCESS";
+	case SPO2_STATE::TIMEOUT:
+		return "TIMEOUT";
+	default:
+		return "UNKNOWN";
+	}
+}
 
 constexpr auto FMY_FIFO_OUTPUT_READ               = 0x12;
 constexpr auto IDX_FIFO_OUTPUT_READ_NUM_OF_SAMPLE = 0x0;
@@ -98,6 +163,9 @@ constexpr auto IDX_FIFO_OUTPUT_READ_DATA          = 0x01;
 
 constexpr auto FMY_ALGO_CFG               = 0x50;
 constexpr auto IDX_ALGO_CFG_WEARABLE_SUIT = 0x07;
+
+constexpr auto FMY_ALGO_EN               = 0x52;
+constexpr auto FMY_ALGO_EN_WEARABLE_SUIT = 0x07;
 } // namespace max
 
 #endif /* EE69DC8E_8AA5_4DAB_AB81_FC369B8A90CB */

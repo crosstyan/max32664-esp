@@ -1,5 +1,6 @@
 #include "esp_err.h"
 #include "esp_system.h"
+#include "max.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <machine/endian.h>
 #include <span>
 #include <ranges>
 #include <tuple>
@@ -520,7 +522,7 @@ init_retry:
 		constexpr auto N  = 18;
 		constexpr auto NN = N - 2;
 		if (buf.size() > NN) {
-			return ue{ESP_ERR_NO_MEM};
+			return ue{ESP_ERR_INVALID_SIZE};
 		}
 		std::array<uint8_t, N> buf_ext = {};
 		buf_ext[0]                     = 0x40;
@@ -642,7 +644,7 @@ init_retry:
 		static expected<raw_sample_t, esp_err_t> unmarshal(std::span<const uint8_t> buf) {
 			using ue = unexpected<esp_err_t>;
 			if (buf.size() < RAW_SAMPLE_SIZE) {
-				return ue{ESP_ERR_NO_MEM};
+				return ue{ESP_ERR_INVALID_SIZE};
 			}
 			// 3 bytes for each ppg, MSB first
 			const uint32_t ppg1 = static_cast<uint32_t>(buf[0]) << 16 | static_cast<uint32_t>(buf[1]) << 8 | static_cast<uint32_t>(buf[2]); // green
@@ -724,7 +726,7 @@ init_retry:
 		return write_command_ext_buf(buf);
 	};
 
-	const auto hub_algo_mode = [=](max::ALGO_RUN_MODE mode) {
+	const auto hub_algo_mode = [=](max::ALGO_OP_MODE mode) {
 		uint8_t buf[] = {
 			FMY_ALGO_CFG,
 			IDX_ALGO_CFG_WEARABLE_SUIT,
@@ -766,22 +768,23 @@ init_retry:
 		return write_command_ext_buf(buf);
 	};
 
+	constexpr auto ENABLE_ALGO_DELAY_MS  = 465;
 	const auto hub_algo_report_normal_en = [=]() {
 		uint8_t buf[] = {
-			FMY_ALGO_CFG,
-			IDX_ALGO_CFG_WEARABLE_SUIT,
+			FMY_ALGO_EN,
+			FMY_ALGO_EN_WEARABLE_SUIT,
 			0x01,
 		};
-		return write_command_ext_buf(buf, 465);
+		return write_command_ext_buf(buf, ENABLE_ALGO_DELAY_MS);
 	};
 
 	const auto hub_algo_report_extended_en = [=]() {
 		uint8_t buf[] = {
-			FMY_ALGO_CFG,
-			IDX_ALGO_CFG_WEARABLE_SUIT,
+			FMY_ALGO_EN,
+			FMY_ALGO_EN_WEARABLE_SUIT,
 			0x02,
 		};
-		return write_command_ext_buf(buf, 465);
+		return write_command_ext_buf(buf, ENABLE_ALGO_DELAY_MS);
 	};
 
 
@@ -793,6 +796,7 @@ init_retry:
 		if (log_when_failed(TAG, "set FIFO threshold", hub_set_fifo_threshold(0x02))) {
 			return ESP_FAIL;
 		}
+		// 120ms
 		if (log_when_failed(TAG, "set report period", hub_set_report_period(0x03))) {
 			return ESP_FAIL;
 		}
@@ -802,22 +806,170 @@ init_retry:
 		if (log_when_failed(TAG, "enable AEC", hub_algo_aec_en(true))) {
 			return ESP_FAIL;
 		}
-		if (log_when_failed(TAG, "set algo mode", hub_algo_mode(max::ALGO_RUN_MODE::CONTINUOUS_HRM))) {
+		if (log_when_failed(TAG, "set algo mode", hub_algo_mode(max::ALGO_OP_MODE::CONTINUOUS_HRM))) {
 			return ESP_FAIL;
 		}
-		if (log_when_failed(TAG, "disable PD current calculation", hub_algo_pd_current_calculation(false))) {
+		if (log_when_failed(TAG, "disable PD current calculation",
+							hub_algo_pd_current_calculation(false))) {
 			return ESP_FAIL;
 		}
 		if (log_when_failed(TAG, "enable SCD", hub_algo_scd_en(true))) {
 			return ESP_FAIL;
 		}
-		if (log_when_failed(TAG, "set AGC target PD current to 10mA", hub_algo_set_agc_target_pd_current(100))) {
+		// 10mA
+		if (log_when_failed(TAG, "set AGC target PD current",
+							hub_algo_set_agc_target_pd_current(100))) {
 			return ESP_FAIL;
 		}
 		if (log_when_failed(TAG, "enable report normal", hub_algo_report_normal_en())) {
 			return ESP_FAIL;
 		}
 		return ESP_OK;
+	};
+
+	enum class HubAlgoReportType {
+		Normal   = 0x01,
+		Extended = 0x02,
+		ScdOnly  = 0x03,
+	};
+
+	struct __attribute__((packed)) algo_model_data_t {
+		// Current operation mode
+		max::ALGO_OP_MODE op_mode;
+		// 10x calculated heart rate
+		uint16_t hr;
+		// Confidence level in %, >40 is for consumer devices, >80,90 is for medical devices
+		uint8_t hr_conf;
+		// 10x RR – inter-beat interval in ms; Only shows a nonzero value when a new value is calculated.
+		uint16_t rr;
+		// Calculated confidence level of RR in %; Only shows a nonzero value when a new value is calculated.
+		uint8_t rr_conf;
+		// Activity class (Applicable to wrist form factor only, MAX86141/0)
+		max::ACTIVATE_CLASS activity_class;
+		// 1000x calculated SpO2 R value
+		uint16_t r;
+		// SpO2 confidence level in %, >40 is for consumer devices, >80,90 is for medical devices
+		uint8_t spo2_conf;
+		// 10x calculated SpO2 %
+		uint16_t spo2;
+		// Calculation progress in % in one-shot mode of algorithm. In
+		// continuous mode, it is reported as zero and only jumps to 100
+		// when the SpO2 value is updated.
+		//
+		// - Bit[7]: SpO2 valid
+		// - Bit[6..0]: Percent complete
+		uint8_t spo2_percent_complete;
+		// 0: Good quality
+		// 1: Low quality
+		uint8_t spo2_low_signal_quality_flag;
+		// 0: No motion
+		// 1: Excessive motion
+		uint8_t spo2_motion_flag;
+		// Shows the low perfusion index (PI) of the PPG signal
+		// 0: Normal PI; 1: Low PI
+		uint8_t spo2_low_pi_flag;
+		// Shows the reliability of R
+		// 0: Reliable; 1: Unreliable
+		uint8_t spo2_unreliable_r_flag;
+		// Reported status of the SpO2 algorithm
+		max::SPO2_STATE spo2_state;
+		// Skin contact state
+		max::SCD_STATE scd_contact_state;
+		// IBI Offset
+		// Unreliable orientation flag
+		// Reserved
+		uint32_t reserved;
+
+		// make all of uint16_t field to native endian
+		// useful when you're reinterpret cast the data buffer
+		static algo_model_data_t fix_endianness(algo_model_data_t data) {
+			data.hr   = __ntohs(data.hr);
+			data.rr   = __ntohs(data.rr);
+			data.r    = __ntohs(data.r);
+			data.spo2 = __ntohs(data.spo2);
+			return data;
+		}
+
+		float hr_f() const {
+			return static_cast<float>(hr) / 10;
+		}
+
+		float spo2_f() const {
+			return static_cast<float>(spo2) / 10;
+		}
+
+		float r_f() const {
+			return static_cast<float>(r) / 1000;
+		}
+
+		float rr_f() const {
+			return static_cast<float>(rr) / 10;
+		}
+	};
+
+
+	constexpr auto ALGO_REPORT_DATA_SIZE = RAW_SAMPLE_SIZE + sizeof(algo_model_data_t);
+	struct algo_report_t {
+		uint32_t green;
+		uint32_t ir;
+		uint32_t red;
+		int16_t accel_x;
+		int16_t accel_y;
+		int16_t accel_z;
+		algo_model_data_t data;
+
+		static expected<algo_report_t, esp_err_t> unmarshal(std::span<const uint8_t> buf) {
+			using ue = unexpected<esp_err_t>;
+			if (buf.size() < ALGO_REPORT_DATA_SIZE) {
+				return ue{ESP_ERR_INVALID_SIZE};
+			}
+
+			// 3 bytes for each ppg, MSB first
+			const uint32_t ppg1 = static_cast<uint32_t>(buf[0]) << 16 | static_cast<uint32_t>(buf[1]) << 8 | static_cast<uint32_t>(buf[2]); // green
+			const uint32_t ppg2 = static_cast<uint32_t>(buf[3]) << 16 | static_cast<uint32_t>(buf[4]) << 8 | static_cast<uint32_t>(buf[5]); // ir
+			const uint32_t ppg3 = static_cast<uint32_t>(buf[6]) << 16 | static_cast<uint32_t>(buf[7]) << 8 | static_cast<uint32_t>(buf[8]); // red
+
+			const uint32_t ppg4 = static_cast<uint32_t>(buf[9]) << 16 | static_cast<uint32_t>(buf[10]) << 8 | static_cast<uint32_t>(buf[11]);  // green2, N/A for MAX86141
+			const uint32_t ppg5 = static_cast<uint32_t>(buf[12]) << 16 | static_cast<uint32_t>(buf[13]) << 8 | static_cast<uint32_t>(buf[14]); // N/A
+			const uint32_t ppg6 = static_cast<uint32_t>(buf[15]) << 16 | static_cast<uint32_t>(buf[16]) << 8 | static_cast<uint32_t>(buf[17]); // N/A
+
+			// 2 bytes for each accel, MSB first, LSB=0.001g
+			const int16_t accel_x = static_cast<int16_t>(buf[18]) << 8 | static_cast<int16_t>(buf[19]);
+			const int16_t accel_y = static_cast<int16_t>(buf[20]) << 8 | static_cast<int16_t>(buf[21]);
+			const int16_t accel_z = static_cast<int16_t>(buf[22]) << 8 | static_cast<int16_t>(buf[23]);
+
+			auto algo_data = *reinterpret_cast<const algo_model_data_t *>(buf.data() + 24);
+			return algo_report_t{
+				ppg1,
+				ppg2,
+				ppg3,
+				accel_x,
+				accel_y,
+				accel_z,
+				algo_data,
+			};
+		}
+	};
+
+	const auto hub_algo_read_report = [=] -> expected<algo_report_t, esp_err_t> {
+		using ue = unexpected<esp_err_t>;
+		uint8_t buf[1 + ALGO_REPORT_DATA_SIZE];
+		esp_err_t esp_err = read_command(max::FMY_FIFO_OUTPUT_READ, max::IDX_FIFO_OUTPUT_READ_DATA, buf);
+		if (esp_err != ESP_OK) {
+			ESP_LOGE(TAG, "failed to read algo report; esp_err=%s (%d)", esp_err_to_name(esp_err), esp_err);
+			return ue{esp_err};
+		}
+		if (const auto status = buf[0]; status != max::SUCCESS) {
+			ESP_LOGE(TAG, "failed to read algo report; status=%d", status);
+			return ue{ESP_FAIL};
+		}
+		auto raw_ = algo_report_t::unmarshal(std::span(buf + 1, ALGO_REPORT_DATA_SIZE));
+		if (!raw_) {
+			return ue{raw_.error()};
+		}
+		auto raw = *raw_;
+		raw.data = algo_model_data_t::fix_endianness(raw.data);
+		return raw;
 	};
 
 	const auto algo_iter = [=]() {
@@ -843,7 +995,34 @@ init_retry:
 			return;
 		}
 		while (fifo_count > 0) {
-			// TODO
+			auto report_ = hub_algo_read_report();
+			if (!report_) {
+				ESP_LOGE(TAG, "failed to read algo report; err=%s (%d)", esp_err_to_name(report_.error()), report_.error());
+				return;
+			}
+			const auto report = *report_;
+			ESP_LOGI(TAG, "green=%" PRIu32 " ir=%" PRIu32 " red=%" PRIu32 " accel=[%" PRIi16 ", %" PRIi16 ", %" PRIi16 "] "
+						  "hr=%.1f conf=%d%% rr=%.1f rr_conf=%d%% activity=%s "
+						  "spo2=%.1f%% spo2_conf=%d%% r=%.3f "
+						  "flags(low_sig=%d motion=%d low_pi=%d r_unreliable=%d) "
+						  "spo2_state=%s scd_state=%s",
+					 report.green, report.ir, report.red,
+					 report.accel_x, report.accel_y, report.accel_z,
+					 report.data.hr_f(),
+					 report.data.hr_conf,
+					 report.data.rr_f(),
+					 report.data.rr_conf,
+					 max::activate_class_to_string(report.data.activity_class),
+					 report.data.spo2_f(),
+					 report.data.spo2_conf,
+					 report.data.r_f(),
+					 report.data.spo2_low_signal_quality_flag,
+					 report.data.spo2_motion_flag,
+					 report.data.spo2_low_pi_flag,
+					 report.data.spo2_unreliable_r_flag,
+					 max::spo2_state_to_string(report.data.spo2_state),
+					 max::scd_state_to_string(report.data.scd_contact_state));
+			fifo_count--;
 		}
 	};
 
@@ -851,7 +1030,7 @@ init_retry:
 	algo_mode_init();
 	ESP_LOGI(TAG, "initialized");
 	while (true) {
-		delay_ms(100);
+		delay_ms(240);
 		// app_raw_iter();
 		algo_iter();
 	}
