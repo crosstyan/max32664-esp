@@ -632,9 +632,9 @@ init_retry:
 
 	static constexpr auto RAW_SAMPLE_SIZE = 3 * 6 + 3 * 2;
 	struct raw_sample_t {
-		uint32_t green;
-		uint32_t ir;
-		uint32_t red;
+		uint32_t led_1;
+		uint32_t led_2;
+		uint32_t led_3;
 
 		// two's complement, LSB=0.001g
 		int16_t accel_x;
@@ -647,19 +647,19 @@ init_retry:
 				return ue{ESP_ERR_INVALID_SIZE};
 			}
 			// 3 bytes for each ppg, MSB first
-			const uint32_t ppg1 = static_cast<uint32_t>(buf[0]) << 16 | static_cast<uint32_t>(buf[1]) << 8 | static_cast<uint32_t>(buf[2]); // green
-			const uint32_t ppg2 = static_cast<uint32_t>(buf[3]) << 16 | static_cast<uint32_t>(buf[4]) << 8 | static_cast<uint32_t>(buf[5]); // ir
-			const uint32_t ppg3 = static_cast<uint32_t>(buf[6]) << 16 | static_cast<uint32_t>(buf[7]) << 8 | static_cast<uint32_t>(buf[8]); // red
+			const uint32_t led1 = static_cast<uint32_t>(buf[0]) << 16 | static_cast<uint32_t>(buf[1]) << 8 | static_cast<uint32_t>(buf[2]); // green
+			const uint32_t led2 = static_cast<uint32_t>(buf[3]) << 16 | static_cast<uint32_t>(buf[4]) << 8 | static_cast<uint32_t>(buf[5]); // ir
+			const uint32_t led3 = static_cast<uint32_t>(buf[6]) << 16 | static_cast<uint32_t>(buf[7]) << 8 | static_cast<uint32_t>(buf[8]); // red
 
-			const uint32_t ppg4 = static_cast<uint32_t>(buf[9]) << 16 | static_cast<uint32_t>(buf[10]) << 8 | static_cast<uint32_t>(buf[11]);  // green2, N/A for MAX86141
-			const uint32_t ppg5 = static_cast<uint32_t>(buf[12]) << 16 | static_cast<uint32_t>(buf[13]) << 8 | static_cast<uint32_t>(buf[14]); // N/A
-			const uint32_t ppg6 = static_cast<uint32_t>(buf[15]) << 16 | static_cast<uint32_t>(buf[16]) << 8 | static_cast<uint32_t>(buf[17]); // N/A
+			const uint32_t led4 = static_cast<uint32_t>(buf[9]) << 16 | static_cast<uint32_t>(buf[10]) << 8 | static_cast<uint32_t>(buf[11]);  // green2, N/A for MAX86141
+			const uint32_t led5 = static_cast<uint32_t>(buf[12]) << 16 | static_cast<uint32_t>(buf[13]) << 8 | static_cast<uint32_t>(buf[14]); // N/A
+			const uint32_t led6 = static_cast<uint32_t>(buf[15]) << 16 | static_cast<uint32_t>(buf[16]) << 8 | static_cast<uint32_t>(buf[17]); // N/A
 
 			// 2 bytes for each accel, MSB first, LSB=0.001g
 			const int16_t accel_x = static_cast<int16_t>(buf[18]) << 8 | static_cast<int16_t>(buf[19]);
 			const int16_t accel_y = static_cast<int16_t>(buf[20]) << 8 | static_cast<int16_t>(buf[21]);
 			const int16_t accel_z = static_cast<int16_t>(buf[22]) << 8 | static_cast<int16_t>(buf[23]);
-			return raw_sample_t{ppg1, ppg2, ppg3, accel_x, accel_y, accel_z};
+			return raw_sample_t{led1, led2, led3, accel_x, accel_y, accel_z};
 		}
 	};
 
@@ -788,6 +788,88 @@ init_retry:
 	};
 
 
+	// default is green, ir, red
+	// my hardware wiring is ir, green, red
+	// need to fix the led channel order
+	const auto hub_user_fix_led_channel = [=] {
+		// MAX86141 default: 0x0001
+		// For WHRM
+		// 0x17 0xWX 0xYZ
+		// WX is input 1 of the WHRM algorithm.
+		// W = 0 for Slot 1
+		// W = 1 for Slot 2
+		// W = 2 for Slot 3
+		// W = 3 for Slot 4
+		// W = 4 for Slot 5
+		// W = 5 for Slot 6
+		// W = 7 for Slot not used
+		// X = 0 for PD1
+		// X = 1 for PD2
+		// X = 3 for PD not used.
+		// YZ is input 2 of the WHRM algorithm.
+		// Y = 0 for Slot 1
+		// Y = 1 for Slot 2
+		// Y = 2 for Slot 3
+		// Y = 3 for Slot 4
+		// Y = 4 for Slot 5
+		// Y = 5 for Slot 6
+		// Y = 7 for Slot not used
+		// Z = 0 for PD1
+		// Z = 1 for PD2
+		// Z = 3 for PD not used.
+
+		// use Slot1 for PD0 and PD1
+		std::array<uint8_t, 5> buf = {FMY_ALGO_CFG, IDX_ALGO_CFG_WEARABLE_SUIT, 0x17, 0x10, 0x11};
+		auto res                   = write_command_ext_buf(buf);
+		if (!res) {
+			ESP_LOGE(TAG, "failed to set WHRM LED/PD inputs; err=%s (%d)", esp_err_to_name(res.error()), res.error());
+			return res.error();
+		}
+		// MAX86141/40,MAXM86161 Default: 0x1020
+		// 0x18 0xWX 0xYZ
+		//
+		// Write Slot and PD configuration for the IR,
+		// red inputs to the WSpO2 algorithm,
+		// WX is the LED/PD used for IR for the
+		// WSpO2 algorithm.
+		// W = 0 for Slot 1
+		// W = 1 for Slot 2
+		// W = 2 for Slot 3
+		// W = 3 for Slot 4
+		// W = 4 for Slot 5
+		// W = 5 for Slot 6
+		// W = 7 for Slot not used
+		// X = 0 for PD1
+		// X = 1 for PD2
+		// X = 3 for PD not used.
+		//
+		// YZ is the LED/PD used for red for the
+		// WSpO2 algorithm.
+		// Y = 0 for Slot 1
+		// Y = 1 for Slot 2
+		// Y = 2 for Slot 3
+		// Y = 3 for Slot 4
+		// Y = 4 for Slot 5
+		// Y = 5 for Slot 6
+		// Y = 7 for Slot not used
+		// Z = 0 for PD1
+		// Z = 1 for PD2
+		// Z = 3 for PD not used
+
+		// use Slot0 PD0 for IR, Slot2 PD0 for Red
+		buf = {FMY_ALGO_CFG, IDX_ALGO_CFG_WEARABLE_SUIT, 0x18, 0x00, 0x20};
+		res = write_command_ext_buf(buf);
+		if (!res) {
+			ESP_LOGE(TAG, "failed to set WSpO2 LED/PD inputs; err=%s (%d)", esp_err_to_name(res.error()), res.error());
+			return res.error();
+		}
+		// The LED # that is fired in each slot is defined
+		// in 0x19 command.
+
+		return ESP_OK;
+	};
+
+
 	const auto algo_mode_init = [=] {
 		constexpr auto TAG = "algo_init";
 		if (log_when_failed(TAG, "set FIFO mode", hub_set_fifo_mode(max::FIFO_OUTPUT_MODE::SENSOR_AND_ALGO))) {
@@ -801,6 +883,9 @@ init_retry:
 			return ESP_FAIL;
 		}
 		if (const auto err = hub_user_enable_sensors(); err != ESP_OK) {
+			return err;
+		}
+		if (const auto err = hub_user_fix_led_channel(); err != ESP_OK) {
 			return err;
 		}
 		if (log_when_failed(TAG, "enable AEC", hub_algo_aec_en(true))) {
@@ -818,7 +903,7 @@ init_retry:
 		}
 		// 10mA
 		if (log_when_failed(TAG, "set AGC target PD current",
-							hub_algo_set_agc_target_pd_current(100))) {
+							hub_algo_set_agc_target_pd_current(1000))) {
 			return ESP_FAIL;
 		}
 		if (log_when_failed(TAG, "enable report normal", hub_algo_report_normal_en())) {
@@ -910,9 +995,9 @@ init_retry:
 
 	constexpr auto ALGO_REPORT_DATA_SIZE = RAW_SAMPLE_SIZE + sizeof(algo_model_data_t);
 	struct algo_report_t {
-		uint32_t green;
-		uint32_t ir;
-		uint32_t red;
+		uint32_t led_1;
+		uint32_t led_2;
+		uint32_t led_3;
 		int16_t accel_x;
 		int16_t accel_y;
 		int16_t accel_z;
@@ -1001,12 +1086,12 @@ init_retry:
 				return;
 			}
 			const auto report = *report_;
-			ESP_LOGI(TAG, "green=%" PRIu32 " ir=%" PRIu32 " red=%" PRIu32 " accel=[%" PRIi16 ", %" PRIi16 ", %" PRIi16 "] "
+			ESP_LOGI(TAG, "ir=%" PRIu32 " green=%" PRIu32 " red=%" PRIu32 " accel=[%" PRIi16 ", %" PRIi16 ", %" PRIi16 "] "
 						  "hr=%.1f conf=%d%% rr=%.1f rr_conf=%d%% activity=%s "
 						  "spo2=%.1f%% spo2_conf=%d%% r=%.3f "
 						  "flags(low_sig=%d motion=%d low_pi=%d r_unreliable=%d) "
 						  "spo2_state=%s scd_state=%s",
-					 report.green, report.ir, report.red,
+					 report.led_1, report.led_2, report.led_3,
 					 report.accel_x, report.accel_y, report.accel_z,
 					 report.data.hr_f(),
 					 report.data.hr_conf,
