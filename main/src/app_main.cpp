@@ -94,6 +94,16 @@ void app_main() {
 	auto &ble_hr_char     = *ble_hr_service.createCharacteristic(BLE_HR_CHAR_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 16);
 	auto &ble_hr_raw_char = *ble_hr_service.createCharacteristic(BLE_HR_RAW_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 64);
 
+	// required for restart advertising when the client disconnects
+	// see also: https://github.com/h2zero/esp-nimble-cpp/blob/master/examples/NimBLE_Server/main/main.cpp
+	class ServerCallbacks : public NimBLEServerCallbacks {
+		void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) override {
+			NimBLEDevice::startAdvertising();
+		}
+	};
+	static ServerCallbacks serverCallbacks;
+	ble_server.setCallbacks(&serverCallbacks);
+
 	i2c_master_bus_config_t i2c_mst_config = {
 		.i2c_port          = I2C_NUM_0,
 		.sda_io_num        = GPIO_NUM_10,
