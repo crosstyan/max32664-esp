@@ -1108,7 +1108,7 @@ init_retry:
 		if (report.data.scd_contact_state == max::SCD_STATE::ON_SKIN) {
 			flags.sensor_contact_detected = true;
 		}
-		if (report.data.rr_conf >= 25) {
+		if (report.data.rr != 0 && report.data.rr_conf >= 25) {
 			flags.rr_interval_present = true;
 			buf                       = std::span(buf_, 4);
 			uint16_t rr_value         = report.data.rr / 10;
@@ -1143,7 +1143,7 @@ init_retry:
 					 *reinterpret_cast<const uint8_t *>(&status));
 			return;
 		}
-		auto fifo_count_ = hub_get_number_of_samples();
+		const auto fifo_count_ = hub_get_number_of_samples();
 		if (!fifo_count_) {
 			return;
 		}
@@ -1153,7 +1153,7 @@ init_retry:
 			return;
 		}
 		while (fifo_count > 0) {
-			auto report_ = hub_algo_read_report();
+			const auto report_ = hub_algo_read_report();
 			if (!report_) {
 				ESP_LOGE(TAG, "failed to read algo report; err=%s (%d)", esp_err_to_name(report_.error()), report_.error());
 				return;
@@ -1196,7 +1196,7 @@ init_retry:
 	ble_advertising.start();
 	// If you observe that the BLE advertising causes the serial port to disconnect,
 	// turn down the BLE TX power.
-	ESP_LOGI(TAG, "BLE advertising started");
+	ESP_LOGI(TAG, "BLE advertising");
 
 	// app_raw_mode_init();
 	algo_mode_init();
