@@ -1194,6 +1194,8 @@ init_retry:
 	ble_advertising.setName(BLE_DEVICE_NAME);
 	ble_advertising.enableScanResponse(true);
 	ble_advertising.start();
+	// If you observe that the BLE advertising causes the serial port to disconnect,
+	// turn down the BLE TX power.
 	ESP_LOGI(TAG, "BLE advertising started");
 
 	// app_raw_mode_init();
