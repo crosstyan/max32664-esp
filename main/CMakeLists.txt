@@ -15,4 +15,5 @@ idf_component_register(
         expected
         esp-nimble-cpp
         app_utils
+        llcc68
         )

@@ -1,2 +1,4 @@
 idf_component_register(
-        INCLUDE_DIRS inc/)
+        INCLUDE_DIRS inc/
+        REQUIRES expected
+)
