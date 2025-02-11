@@ -1140,7 +1140,7 @@ init_retry:
 	};
 
 	const auto algo_iter = [=]() {
-		static Instant debug_print_inst{};
+		static utils::Instant debug_print_inst{};
 		const auto status_ = hub_status();
 		if (!status_) {
 			ESP_LOGE(TAG, "failed to get sensor hub status; err=%s (%d)", esp_err_to_name(status_.error()), status_.error());

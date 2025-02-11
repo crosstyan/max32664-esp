@@ -8,7 +8,7 @@
 #include <chrono>
 #include <esp_timer.h>
 
-namespace app {
+namespace utils {
 /**
  * @brief A measurement of a monotonically nondecreasing clock.
  * @tparam T the data type of the counter
