@@ -35,6 +35,13 @@ inline void delay_ms(uint32_t ms) {
 	vTaskDelay(ms / portTICK_PERIOD_MS);
 };
 
+inline uint32_t millis() {
+	return esp_timer_get_time() / 1000;
+}
+
+inline uint32_t micros() {
+	return esp_timer_get_time();
+}
 
 inline void print_as_hex(std::span<const uint8_t> data) {
 	const auto enumerate = [](const auto &data) {

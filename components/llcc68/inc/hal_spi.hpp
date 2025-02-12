@@ -6,86 +6,25 @@
 #include "radio_definitions.hpp"
 #include "hal_gpio.hpp"
 #include "utils/result.hpp"
-
+#include "utils/utils.hpp"
+#include "hal_error.hpp"
 // https://stackoverflow.com/questions/35089273/why-errno-when-posix-function-indicate-error-condition-by-returning-1-or-null
 // I was thinking about something like error stack.
 // like call stack, but the error context could be pushed
 
-namespace error {
-/**
- * \brief SPI and Radio error codes
- */
-struct spi {
-	static constexpr uint8_t Category = 0x02;
-	enum class Code : uint8_t {
-		OK                    = 0,
-		UNKNOWN               = 1,
-		SPI_INVALID_BIT_RANGE = 2,
-		// A transaction from host took too long to complete and triggered an internal watchdog.
-		// The watchdog mechanism can be disabled by host; it is meant to ensure all outcomes are flagged to the host MCU.
-		SPI_CMD_TIMEOUT = 3,
-		// Processor was unable to process command either because of an invalid opcode or
-		// because an incorrect number of parameters has been provided.
-		SPI_CMD_INVALID = 4,
-		// The command was successfully processed, however the chip could not execute the command;
-		// for instance it was unable to enter the specified device mode or send the requested data
-		SPI_CMD_FAILED           = 5,
-		CHIP_NOT_FOUND           = 6,
-		INVALID_TCXO_VOLTAGE     = 7,
-		INVALID_CODING_RATE      = 8,
-		INVALID_SPREADING_FACTOR = 9,
-		INVALID_BANDWIDTH        = 10,
-		INVALID_FREQUENCY        = 11,
-		INVALID_OUTPUT_POWER     = 12,
-		PACKET_TOO_LONG          = 13,
-		INVALID_CAD_RESULT       = 14,
-		WRONG_MODERN             = 15,
-		RX_TIMEOUT               = 16,
-		CRC_MISMATCH             = 17,
-		BUSY_TX                  = 18,
-		__LAST__
-	};
-
-	struct t {
-		Code code;
-		operator error::t() const { // NOLINT(*-explicit-constructor)
-			return static_cast<error::t>(generic::Category << 8 | static_cast<uint8_t>(code));
-		}
-		bool operator==(t rhs) const {
-			return code == rhs.code;
-		}
-		bool operator==(Code code) const {
-			return this->code == code;
-		}
-	};
-
-	static constexpr Code from_num(uint8_t num) {
-		if (num < static_cast<uint8_t>(Code::__LAST__)) {
-			return static_cast<Code>(num);
-		}
-		return Code::UNKNOWN;
-	}
-
-	static constexpr optional<t> as(const error::t e) {
-		const uint8_t cat  = e >> 8;
-		const uint8_t code = static_cast<uint8_t>(e & 0xff);
-		if (cat == Category) {
-			return t{from_num(code)};
-		}
-		return nullopt;
-	}
-};
-}
 
 namespace hal::spi {
+template <typename T, typename E>
+using Result = utils::Result<T, E>;
+using Unit   = utils::Unit;
+
 constexpr auto MOSI_PIN = GPIO_NUM_12;
 constexpr auto MISO_PIN = GPIO_NUM_4;
 constexpr auto SCLK_PIN = GPIO_NUM_13;
 constexpr auto BUSY_PIN = GPIO_NUM_5;
 constexpr auto CS_PIN   = GPIO_NUM_14;
-using error_t           = error::spi::t;
+using error_t           = error::t;
 using ue_t              = utils::unexpected<error_t>;
-using Code              = error::spi::Code;
 
 /*!
   \brief Basic SPI read command. Defaults to 0x00.
@@ -132,18 +71,20 @@ inline void after_transaction() {}
 
 inline uint8_t hal_transfer(const uint8_t data) {
 	// TODO
+	std::unreachable();
 }
 
-inline Code hal_transfer_buffer(const uint8_t *tx_data, uint8_t *rx_data, size_t size) {
+inline error_t hal_transfer_buffer(const uint8_t *tx_data, uint8_t *rx_data, size_t size) {
 	// TODO
+	std::unreachable();
 }
 
 inline void delay_ms(const size_t ms) {
-	::delay(ms);
+	utils::delay_ms(ms);
 }
 
 static uint32_t hal_millis() {
-	return ::millis();
+	return utils::millis();
 }
 
 /**
@@ -277,17 +218,16 @@ namespace llcc68 {
 #ifndef SKIP_ERROR_CHECK
 		constexpr auto MASK = 0b00001110;
 		if (const auto IN_MASKED = in & MASK; IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_TIMEOUT) {
-			return error_t{Code::SPI_CMD_TIMEOUT};
+			return error_t{error::SPI_TIMEOUT};
 		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_INVALID) {
-			return error_t{Code::SPI_CMD_INVALID};
+			return error_t{error::SPI_CMD_INVALID};
 		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_FAILED) {
-			return error_t{Code::SPI_CMD_FAILED};
+			return error_t{error::SPI_CMD_FAILED};
 		} else if ((in == 0x00) || (in == 0xFF)) {
-			return error_t{Code::SPI_CMD_INVALID};
+			return error_t{error::SPI_CMD_INVALID};
 		}
 #endif
-
-		return error_t{Code::OK};
+		return error_t{error::OK};
 	}
 
 	inline error_t check_stream() {

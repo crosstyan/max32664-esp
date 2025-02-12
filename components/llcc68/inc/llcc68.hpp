@@ -6,17 +6,22 @@
 #define PWR_MGR_LLCC68_H
 #include <cstddef>
 #include <chrono>
-#include <etl/vector.h>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include "hal_gpio.hpp"
 #include "utils/result.hpp"
 #include "utils/instant.hpp"
 #include "llcc68_definitions.hpp"
 #include "hal_spi.hpp"
-#include "fixed_point.h"
-#include "app_utils.h"
+#include "fixed_point.hpp"
+#include "hal_error.hpp"
 
 /**
  * \brief return if STATEVAR has value, otherwise return the error
  * \param STATEVAR the variable to check
+ * \note this macro is used to return the error from a function
+ * \sa https://en.cppreference.com/w/cpp/utility/expected/operator_bool
  */
 #define APP_RADIO_RETURN_ERR(STATEVAR)       \
 	{                                        \
@@ -27,15 +32,17 @@
 
 namespace llcc68 {
 using namespace hal;
-using Instant = utils::Instant;
+
+template <typename T = int64_t>
+using Instant = utils::Instant<T>;
 
 template <typename T, typename E>
 using Result = utils::Result<T, E>;
 using Unit   = utils::Unit;
 
 using millisecond       = std::chrono::duration<size_t, std::milli>;
-constexpr auto RST_PIN  = PA1;
-constexpr auto DIO1_PIN = PA3;
+constexpr auto RST_PIN  = GPIO_NUM_22;
+constexpr auto DIO1_PIN = GPIO_NUM_25;
 
 /**
  * \brief Whether to use only LDO regulator (true) or DC-DC regulator (false)
@@ -51,14 +58,13 @@ constexpr float DEFAULT_TCXO_VOLTAGE = 1.6f;
 
 using error_t = spi::error_t;
 using ue_t    = spi::ue_t;
-using Code    = spi::Code;
 
 /**
  * \brief maintaining the transmission state for async transmission
  */
 struct transmit_state_t {
 	bool is_transmitting = false;
-	Instant start{};
+	Instant<> start{};
 	uint16_t expected_duration_ms{};
 };
 
@@ -106,9 +112,7 @@ inline bool fetch_flag_reset() {
 	}
 }
 
-static constexpr auto delay_ms = [](const size_t ms) {
-	::delay(ms);
-};
+constexpr auto delay_ms = utils::delay_ms;
 
 /*!
   \brief Sets the module to standby mode.
@@ -125,14 +129,14 @@ inline Result<Unit, error_t> standby() {
 
 inline Result<Unit, error_t>
 reset() {
-	gpio::set_mode(RST_PIN, OUTPUT_PP);
-	gpio::digital_write(RST_PIN, LOW);
+	gpio::set_mode(RST_PIN, gpio::Mode::OUTPUT);
+	gpio::digital_write(RST_PIN, false);
 	delay_ms(5);
-	gpio::digital_write(RST_PIN, HIGH);
+	gpio::digital_write(RST_PIN, true);
 	delay_ms(5);
-	const auto instant      = Instant<uint16_t>{};
+	const auto instant      = Instant{};
 	constexpr auto INTERVAL = std::chrono::duration<uint16_t, std::milli>{spi::DEFAULT_TIMEOUT_MS};
-	decltype(standby()) res = ue_t{error_t{Code::UNKNOWN}};
+	decltype(standby()) res = ue_t{error_t{error::FAILED}};
 	while (!res && instant.elapsed() < INTERVAL) {
 		res = standby();
 		if (res.has_value()) {
@@ -254,20 +258,8 @@ inline constexpr uint32_t frequency_raw(const freq_t freq) {
 	constexpr uint32_t CRYSTAL_FREQUENCY     = 32'000'000;
 	constexpr uint32_t CRYSTAL_FREQUENCY_MHZ = CRYSTAL_FREQUENCY / 1'000'000;
 	constexpr uint32_t PPL_DIV_FACTOR        = static_cast<uint32_t>(1) << DIV_EXPONENT;
-	/**
-	 * scale factor is necessary because the calculation will
-	 * overflow the integer part if only using fixed point.
-	 *
-	 * the factor (1048576=0x00100000) is LARGER than uint16_t, so the
-	 * fixed point calculation won't work here. Have to do the calculation manually.
-	 */
-	constexpr auto SCALE_FACTOR = 100;
-	const auto fdf              = freq - cnl::floor(freq);
-	constexpr auto factor       = static_cast<uint32_t>(1 * static_cast<double>(PPL_DIV_FACTOR) / static_cast<double>(CRYSTAL_FREQUENCY_MHZ));
-	constexpr auto factor_s     = static_cast<uint32_t>(1 * static_cast<double>(PPL_DIV_FACTOR) / static_cast<double>(CRYSTAL_FREQUENCY_MHZ) / SCALE_FACTOR);
-	const auto freq_integral    = static_cast<uint32_t>(cnl::floor(freq)) * factor;
-	const auto freq_decimal     = static_cast<uint32_t>(fdf * SCALE_FACTOR) * factor_s;
-	return freq_integral + freq_decimal;
+
+	return static_cast<uint32_t>(freq * PPL_DIV_FACTOR);
 }
 
 /**
@@ -280,7 +272,7 @@ inline Result<Unit, error_t>
 set_frequency(freq_t freq, const bool calibrate = true) {
 	using f_t = decltype(freq);
 	if (!valid_freq(freq)) {
-		return ue_t{error_t{Code::INVALID_FREQUENCY}};
+		return ue_t{error_t{error::RADIO_INVALID_FREQUENCY}};
 	}
 	if (calibrate) {
 		uint8_t data[2];
@@ -459,9 +451,9 @@ inline Result<Unit, error_t> config_packet_type(const parameters &params) {
 
 	// wait for calibration to complete
 	delay_ms(5);
-	while (gpio::digital_read(DIO1_PIN) == HIGH) {}
+	while (gpio::digital_read(DIO1_PIN) == gpio::HIGH) {}
 	const auto err = spi::llcc68::check_stream();
-	if (err != Code::OK) {
+	if (err != error::OK) {
 		return ue_t{error_t{err}};
 	}
 	return {};
@@ -625,7 +617,7 @@ channel_scan_result() {
 	} else if (*res & RADIOLIB_SX126X_IRQ_CAD_DONE) {
 		return true;
 	}
-	return ue_t{error_t{Code::INVALID_CAD_RESULT}};
+	return ue_t{error_t{error::RADIO_INVALID_CAD_RESULT}};
 }
 
 /**
@@ -647,7 +639,7 @@ sync_scan_channel(
 	auto res = standby();
 	APP_RADIO_RETURN_ERR(res);
 
-	const auto instant = Instant<uint32_t>{};
+	const auto instant = Instant{};
 	res                = set_cad_mode(sf, symbol_num, det_peak, det_min);
 	APP_RADIO_RETURN_ERR(res);
 
@@ -705,7 +697,7 @@ inline uint8_t random_byte() {
 inline Result<uint32_t, error_t>
 set_TCXO(const s_fixed_16_16 voltage, const uint32_t delay = 5000, const bool XTAL = false) {
 	if (XTAL) {
-		return ue_t{error_t{Code::INVALID_TCXO_VOLTAGE}};
+		return ue_t{error_t{error::RADIO_INVALID_TCXO_VOLTAGE}};
 	}
 	auto res = standby();
 	APP_RADIO_RETURN_ERR(res);
@@ -738,10 +730,10 @@ set_TCXO(const s_fixed_16_16 voltage, const uint32_t delay = 5000, const bool XT
 	} else if (__in_precision<3.3f>(voltage)) {
 		data[0] = RADIOLIB_SX126X_DIO3_OUTPUT_3_3;
 	} else {
-		return ue_t{error_t{Code::INVALID_TCXO_VOLTAGE}};
+		return ue_t{error_t{error::RADIO_INVALID_TCXO_VOLTAGE}};
 	}
 
-	uint32_t delay_val = static_cast<uint32_t>(fixed_16_16{delay} / fixed_16_16{15.625});
+	uint32_t delay_val = static_cast<uint32_t>(delay / 15.625);
 	data[1]            = static_cast<uint8_t>((delay_val >> 16) & 0xFF);
 	data[2]            = static_cast<uint8_t>((delay_val >> 8) & 0xFF);
 	data[3]            = static_cast<uint8_t>(delay_val & 0xFF);
@@ -751,6 +743,7 @@ set_TCXO(const s_fixed_16_16 voltage, const uint32_t delay = 5000, const bool XT
 
 	return {delay_val};
 }
+
 
 /**
  * \brief if the symbol (length := 2^sf / bw_khz) > 16, then we're using LDR
@@ -775,13 +768,13 @@ set_modulation_params(const uint8_t sf,
 					  const uint8_t cr   = RADIOLIB_SX126X_LORA_CR_4_5,
 					  const uint8_t ldro = RADIOLIB_SX126X_LORA_LOW_DATA_RATE_OPTIMIZE_OFF) {
 	if (not valid_bw(bw)) {
-		return ue_t{error_t{Code::INVALID_BANDWIDTH}};
+		return ue_t{error_t{error::RADIO_INVALID_BANDWIDTH}};
 	}
 	if (not valid_sf(bw, sf)) {
-		return ue_t{error_t{Code::INVALID_SPREADING_FACTOR}};
+		return ue_t{error_t{error::RADIO_INVALID_SPREADING_FACTOR}};
 	}
 	if (not valid_cr(cr)) {
-		return ue_t{error_t{Code::INVALID_CODING_RATE}};
+		return ue_t{error_t{error::RADIO_INVALID_CODING_RATE}};
 	}
 
 	const uint8_t data[] = {sf, bw, cr, ldro};
@@ -803,7 +796,7 @@ inline Result<Unit, error_t> set_sync_word(const uint8_t sync_word = RADIOLIB_SX
 	const auto pkt_type = get_packet_type();
 	APP_RADIO_RETURN_ERR(pkt_type);
 	if (*pkt_type != RADIOLIB_SX126X_PACKET_TYPE_LORA) {
-		return ue_t{error_t{Code::WRONG_MODERN}};
+		return ue_t{error_t{error::RADIO_WRONG_MODERN}};
 	}
 	const uint8_t data[2] = {static_cast<uint8_t>((sync_word & 0xF0) | ((control_bits & 0xF0) >> 4)),
 							 static_cast<uint8_t>(((sync_word & 0x0F) << 4) | (control_bits & 0x0F))};
@@ -813,7 +806,7 @@ inline Result<Unit, error_t> set_sync_word(const uint8_t sync_word = RADIOLIB_SX
 inline Result<Unit, error_t>
 set_output_power(const int8_t power) {
 	if (!in_range(power, -9, 22)) {
-		return ue_t{error_t{Code::INVALID_OUTPUT_POWER}};
+		return ue_t{error_t{error::RADIO_INVALID_OUTPUT_POWER}};
 	}
 	uint8_t ocp = 0;
 	auto res    = read_register(RADIOLIB_SX126X_REG_OCP_CONFIGURATION, &ocp, 1);
@@ -842,7 +835,7 @@ set_regulator_dc_dc() {
  * \return true if BUSY pin is low, false otherwise
  */
 inline bool busy_low() {
-	return gpio::digital_read(spi::BUSY_PIN) == LOW;
+	return gpio::digital_read(spi::BUSY_PIN) == gpio::LOW;
 }
 
 /**
@@ -899,15 +892,15 @@ read_data(uint8_t *data, size_t len) {
 	APP_RADIO_RETURN_ERR(irq_);
 	const auto st  = spi::llcc68::check_stream();
 	const auto irq = std::move(*irq_);
-	if (irq & RADIOLIB_SX126X_IRQ_TIMEOUT && st == Code::SPI_CMD_TIMEOUT) {
-		return ue_t{error_t{Code::RX_TIMEOUT}};
+	if (irq & RADIOLIB_SX126X_IRQ_TIMEOUT && st == error_t{error::SPI_TIMEOUT}) {
+		return ue_t{error_t{error::RADIO_RX_TIMEOUT}};
 	}
 
 	const auto sz_ = packet_length();
 	APP_RADIO_RETURN_ERR(sz_);
 	const auto sz = std::move(*sz_);
 	if (sz > len) {
-		return ue_t{error_t{Code::PACKET_TOO_LONG}};
+		return ue_t{error_t{error::INVALID_SIZE}};
 	}
 	auto res = read_buffer(data, sz);
 	APP_RADIO_RETURN_ERR(res);
@@ -919,7 +912,7 @@ read_data(uint8_t *data, size_t len) {
 	APP_RADIO_RETURN_ERR(res);
 
 	if ((irq & RADIOLIB_SX126X_IRQ_CRC_ERR) || (irq & RADIOLIB_SX126X_IRQ_HEADER_ERR)) {
-		return ue_t{error_t{Code::CRC_MISMATCH}};
+		return ue_t{error_t{error::RADIO_CRC_MISMATCH}};
 	}
 
 	return {sz};
@@ -989,7 +982,7 @@ inline void after_transmit() {
 inline Result<Unit, error_t>
 sync_transmit(const uint8_t *data, const size_t len, const calc_time_on_air_t &params) {
 	if (len > RADIOLIB_SX126X_MAX_PACKET_LENGTH) {
-		return ue_t{error_t{Code::PACKET_TOO_LONG}};
+		return ue_t{error_t{error::INVALID_SIZE}};
 	}
 
 	decltype(standby()) res;
@@ -1054,10 +1047,10 @@ async_transmit(const uint8_t *data, const size_t len,
 			   const calc_time_on_air_t &params,
 			   const transmit_state_t &tx_state) {
 	if (tx_state.is_transmitting) {
-		return ue_t{error_t{Code::BUSY_TX}};
+		return ue_t{error_t{error::RADIO_BUSY_TX}};
 	}
 	if (len > RADIOLIB_SX126X_MAX_PACKET_LENGTH) {
-		return ue_t{error_t{Code::PACKET_TOO_LONG}};
+		return ue_t{error_t{error::INVALID_SIZE}};
 	}
 
 	decltype(standby()) res;
@@ -1089,9 +1082,9 @@ async_transmit(const uint8_t *data, const size_t len,
 	res = tx();
 	APP_RADIO_RETURN_ERR(res);
 
-	const auto timeout_us = calc_time_on_air(len, params) * 11u / 10u;
-	const auto timeout_ms = timeout_us / 1000;
-	auto instant          = Instant<uint16_t>{};
+	const auto timeout_us     = calc_time_on_air(len, params) * 11u / 10u;
+	const uint16_t timeout_ms = timeout_us / 1000;
+	auto instant              = Instant<>{};
 	return transmit_state_t{
 		.is_transmitting      = true,
 		.start                = std::move(instant),
@@ -1123,7 +1116,7 @@ poll_tx_state(const transmit_state_t tx_state) {
 }
 
 static constexpr auto init_pins = [] {
-	gpio::set_mode(RST_PIN, OUTPUT_PP);
+	gpio::set_mode(RST_PIN, gpio::Mode::OUTPUT);
 	config_exti();
 };
 
@@ -1146,7 +1139,7 @@ static constexpr auto begin = [](const parameters &params) -> Result<Unit, error
 	APP_RADIO_RETURN_ERR(res);
 
 	if (!find_chip()) {
-		return ue_t{error_t{Code::CHIP_NOT_FOUND}};
+		return ue_t{error_t{error::RADIO_CHIP_NOT_FOUND}};
 	}
 
 	constexpr auto tcxo_voltage = DEFAULT_TCXO_VOLTAGE;

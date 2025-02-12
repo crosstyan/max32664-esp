@@ -14,12 +14,12 @@ namespace utils {
  * @tparam T the data type of the counter
  * @sa https://doc.rust-lang.org/std/time/struct.Instant.html
  */
+template <typename T = int64_t>
 class Instant {
-	using T = int64_t;
 	T time_;
 
 public:
-	using time_t          = decltype(time_);
+	using time_t          = T;
 	using clock_precision = std::micro;
 	using duration_t      = std::chrono::duration<time_t, clock_precision>;
 	using ms_t            = std::chrono::duration<time_t, std::milli>;

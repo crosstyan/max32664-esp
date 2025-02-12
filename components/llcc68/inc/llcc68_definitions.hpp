@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <tuple>
 #include "radio_definitions.hpp"
-#include "fixed_point.hpp"
 
 namespace llcc68 {
 using freq_t                            = float;
@@ -113,8 +112,8 @@ constexpr bool valid_bw(const uint8_t bw) {
 	}
 }
 
-using bw_t = fixed_16_16;
-constexpr fixed_16_16 bw_khz(const uint8_t bw) {
+using bw_t = float;
+constexpr bw_t bw_khz(const uint8_t bw) {
 	switch (bw) {
 	case RADIOLIB_SX126X_LORA_BW_7_8:
 		return bw_t{7.8f};

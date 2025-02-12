@@ -1,7 +1,7 @@
 //
 // Created by Kurosu Chan on 2024/1/17.
 //
-#include "llcc68.h"
+#include "llcc68.hpp"
 
 namespace llcc68 {
 void config_exti() {
