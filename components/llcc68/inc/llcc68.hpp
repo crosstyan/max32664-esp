@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <chrono>
 #include <etl/vector.h>
-#include "result.hpp"
-#include "instant.hpp"
+#include "utils/result.hpp"
+#include "utils/instant.hpp"
 #include "llcc68_definitions.hpp"
 #include "hal_spi.hpp"
 #include "fixed_point.h"

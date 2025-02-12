@@ -1,7 +1,6 @@
 #include "esp_err.h"
 #include "esp_system.h"
 #include "max.hpp"
-#include "instant.hpp"
 #include <NimBLEDevice.h>
 #include <algorithm>
 #include <cstdint>
@@ -20,57 +19,8 @@
 #include <flash.hpp>
 #include <tl/expected.hpp>
 #include <memory>
-
-namespace app {
-void IRAM_ATTR delay_us(uint32_t us) {
-	constexpr auto micros = [] { return esp_timer_get_time(); };
-	constexpr auto nop    = [] { __asm__ __volatile__("nop"); };
-	auto m                = micros();
-	if (us) {
-		auto e = (m + us);
-		[[unlikely]]
-		if (m > e) { // overflow
-			while (micros() > e) {
-				nop();
-			}
-		} else {
-			while (micros() < e) {
-				nop();
-			}
-		}
-	}
-}
-
-void delay_ms(uint32_t ms) {
-	vTaskDelay(ms / portTICK_PERIOD_MS);
-};
-
-
-void print_as_hex(std::span<const uint8_t> data) {
-	const auto enumerate = [](const auto &data) {
-		return data | std::views::transform([i = 0](const auto &value) mutable {
-				   return std::make_tuple(i++, value);
-			   });
-	};
-	for (const auto [i, byte] : enumerate(data)) {
-		bool is_end = i == data.size() - 1;
-		if (is_end) {
-			printf("%02x\n", byte);
-		} else {
-			if (i % 16 == 15) {
-				printf("%02x\n", byte);
-			} else {
-				printf("%02x ", byte);
-			}
-		}
-	}
-}
-
-template <typename T>
-std::span<const uint8_t> as_bytes(const T &value) {
-	return std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(&value), sizeof(value));
-}
-} // namespace app
+#include "utils/utils.hpp"
+#include "utils/instant.hpp"
 
 // Wait timeout, in ms. Note: -1 means wait forever.
 constexpr auto DEFAULT_I2C_TIMEOUT_MS = 5'000;
@@ -83,7 +33,7 @@ void app_main();
 
 [[noreturn]]
 void app_main() {
-	using namespace app;
+	using namespace utils;
 	using namespace tl;
 	using namespace max;
 	constexpr auto TAG = "main";

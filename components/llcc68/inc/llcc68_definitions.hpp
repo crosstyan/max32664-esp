@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <tuple>
-#include "radio_definitions.h"
-#include "fixed_point.h"
+#include "radio_definitions.hpp"
+#include "fixed_point.hpp"
 
 namespace llcc68 {
 using freq_t                            = float;

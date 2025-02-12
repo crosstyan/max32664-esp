@@ -3,9 +3,9 @@
 //
 #ifndef SPI_H
 #define SPI_H
-#include "radio_definitions.h"
-#include "result.hpp"
+#include "radio_definitions.hpp"
 #include "hal_gpio.hpp"
+#include "utils/result.hpp"
 
 // https://stackoverflow.com/questions/35089273/why-errno-when-posix-function-indicate-error-condition-by-returning-1-or-null
 // I was thinking about something like error stack.
@@ -78,13 +78,13 @@ struct spi {
 }
 
 namespace hal::spi {
-constexpr auto MOSI_PIN = PA7;
-constexpr auto MISO_PIN = PA6;
-constexpr auto SCLK_PIN = PA5;
-constexpr auto BUSY_PIN = PA2;
-constexpr auto CS_PIN   = PA4;
+constexpr auto MOSI_PIN = GPIO_NUM_12;
+constexpr auto MISO_PIN = GPIO_NUM_4;
+constexpr auto SCLK_PIN = GPIO_NUM_13;
+constexpr auto BUSY_PIN = GPIO_NUM_5;
+constexpr auto CS_PIN   = GPIO_NUM_14;
 using error_t           = error::spi::t;
-using ue_t              = unexpected<error_t>;
+using ue_t              = utils::unexpected<error_t>;
 using Code              = error::spi::Code;
 
 /*!
@@ -116,84 +116,26 @@ constexpr bool SPIstreamType = true;
 constexpr size_t DEFAULT_TIMEOUT_MS = 1000;
 
 inline void init() {
-	// auto &spi = details::__spi__;
-	// // configure SPI Pins
-	// __HAL_RCC_GPIOA_CLK_ENABLE();
-	// GPIO_InitTypeDef gpio{};
-	// // A5 A6 A7
-	// gpio.Pin       = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-	// gpio.Mode      = GPIO_MODE_AF_PP;
-	// gpio.Pull      = GPIO_NOPULL;
-	// gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
-	// gpio.Alternate = GPIO_AF0_SPI1;
-	// HAL_GPIO_Init(GPIOA, &gpio);
-
-	// __HAL_RCC_SPI1_CLK_ENABLE();
-	// spi.Instance         = SPI1;
-	// spi.Init.Mode        = SPI_MODE_MASTER;
-	// spi.Init.Direction   = SPI_DIRECTION_2LINES;
-	// spi.Init.DataSize    = SPI_DATASIZE_8BIT;
-	// spi.Init.CLKPolarity = SPI_POLARITY_LOW;
-	// spi.Init.CLKPhase    = SPI_PHASE_1EDGE;
-	// spi.Init.NSS         = SPI_NSS_SOFT;
-	// // https://community.st.com/t5/missing-articles/how-is-my-spi-s-baudrate-calculated-using-stm32cubemx/td-p/49592
-	// // https://stackoverflow.com/questions/58125052/the-best-spi-baudrate-prescaler
-	// spi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-	// spi.Init.FirstBit          = SPI_FIRSTBIT_MSB;
-	// spi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
-	// // https://electronics.stackexchange.com/questions/28179/spi-ti-or-motorola-mode
-	// spi.Init.TIMode = SPI_TIMODE_DISABLE;
-
-	// if (HAL_SPI_Init(&spi) != HAL_OK) {
-	// 	while (true);
-	// }
-
-	// // https://github.com/stm32duino/Arduino_Core_STM32/wiki/HAL-configuration
-	// GPIO_InitTypeDef gpio_cs{};
-	// // PA4
-	// gpio_cs.Pin   = GPIO_PIN_4;
-	// gpio_cs.Mode  = GPIO_MODE_OUTPUT_PP;
-	// gpio_cs.Pull  = GPIO_NOPULL;
-	// gpio_cs.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	// HAL_GPIO_Init(GPIOA, &gpio_cs);
-
-	// GPIO_InitTypeDef gpio_busy{};
-	// // PA2
-	// gpio_busy.Pin   = GPIO_PIN_2;
-	// gpio_busy.Mode  = GPIO_MODE_INPUT;
-	// gpio_busy.Pull  = GPIO_NOPULL;
-	// gpio_busy.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	// HAL_GPIO_Init(GPIOA, &gpio_busy);
-
-	// HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	// TODO
 }
 
 inline void cs_low() {
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+	hal::gpio::digital_write(CS_PIN, false);
 }
 
 inline void cs_high() {
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	hal::gpio::digital_write(CS_PIN, true);
 }
 
 inline void before_transaction() {}
 inline void after_transaction() {}
 
 inline uint8_t hal_transfer(const uint8_t data) {
-	uint8_t recv           = 0;
-	auto &spi              = details::__spi__;
-	const volatile auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(&data), &recv, 1, 10);
-	static_cast<void>(ok);
-	return recv;
+	// TODO
 }
 
 inline Code hal_transfer_buffer(const uint8_t *tx_data, uint8_t *rx_data, size_t size) {
-	auto &spi     = details::__spi__;
-	const auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(tx_data), rx_data, size, 100);
-	if (ok != HAL_OK) {
-		return Code::SPI_CMD_FAILED;
-	}
-	return Code::OK;
+	// TODO
 }
 
 inline void delay_ms(const size_t ms) {
