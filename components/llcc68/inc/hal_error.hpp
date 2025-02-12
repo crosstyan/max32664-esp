@@ -1,8 +1,3 @@
-#ifndef B65E8E59_2C74_44F2_BD11_AF18F829A716
-#define B65E8E59_2C74_44F2_BD11_AF18F829A716
-
-
-#endif /* B65E8E59_2C74_44F2_BD11_AF18F829A716 */
 #ifndef D4D45A87_A012_494D_90D2_B4AE0DDE2487
 #define D4D45A87_A012_494D_90D2_B4AE0DDE2487
 #include <cstdint>
@@ -11,6 +6,9 @@
 
 #define APP_ERR_TBL_IT(err) {err, #err}
 
+// https://stackoverflow.com/questions/35089273/why-errno-when-posix-function-indicate-error-condition-by-returning-1-or-null
+// I was thinking about something like error stack.
+// like call stack, but the error context could be pushed
 namespace error {
 using t = int32_t;
 
@@ -97,7 +95,7 @@ constexpr auto error_table = std::to_array<std::tuple<t, const char *>>(
 		APP_ERR_TBL_IT(RADIO_BUSY_TX),
 	});
 
-inline const char *error_to_name(t err) {
+inline const char *err_to_str(t err) {
 	for (const auto &[code, name] : error_table) {
 		if (code == err) {
 			return name;

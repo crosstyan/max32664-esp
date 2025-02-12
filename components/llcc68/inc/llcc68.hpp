@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include "hal_gpio.hpp"
+#include "utils/utils.hpp"
 #include "utils/result.hpp"
 #include "utils/instant.hpp"
 #include "llcc68_definitions.hpp"
@@ -24,7 +25,7 @@
  */
 #define APP_RADIO_RETURN_ERR(STATEVAR)       \
 	{                                        \
-		if (!(STATEVAR.has_value())) {       \
+		if (not(STATEVAR.has_value())) {     \
 			return (ue_t{STATEVAR.error()}); \
 		}                                    \
 	}
@@ -71,9 +72,9 @@ struct transmit_state_t {
  * @brief private namespace; Don't use anything in this namespace outside of this file
  */
 namespace details {
-	inline uint32_t __tcxo_delay__{};
-	inline transmit_state_t __tx_state__{};
-	inline bool __dio_flag__ = false;
+	extern uint32_t __tcxo_delay__;
+	extern transmit_state_t __tx_state__;
+	extern bool __dio_flag__;
 }
 
 /*
@@ -103,7 +104,7 @@ inline void reset_flag() {
  */
 [[nodiscard]]
 inline bool fetch_flag_reset() {
-	if (!details::__dio_flag__) {
+	if (not details::__dio_flag__) {
 		return false;
 	} else {
 		reset_flag();
@@ -118,7 +119,7 @@ constexpr auto delay_ms = utils::delay_ms;
 */
 inline Result<Unit, error_t> standby() {
 	// immediately attempt to wake up the module by pulling NSS low
-	spi::cs_low();
+	// spi::cs_low();
 	// Oscillator to be used in standby mode.
 	// Can be set to RADIOLIB_SX126X_STANDBY_RC (13 MHz RC oscillator)
 	// or RADIOLIB_SX126X_STANDBY_XOSC (32 MHz external crystal oscillator).
@@ -551,7 +552,7 @@ inline Result<Unit, error_t> tx(const uint32_t timeout = 0) {
  */
 inline Result<Unit, error_t> rx(const uint32_t timeout = RADIOLIB_SX126X_RX_TIMEOUT_INF) {
 	const uint8_t data[] = {static_cast<uint8_t>((timeout >> 16) & 0xFF), static_cast<uint8_t>((timeout >> 8) & 0xFF), static_cast<uint8_t>(timeout & 0xFF)};
-	return spi::write_stream(RADIOLIB_SX126X_CMD_SET_RX, data, std::size(data));
+	return spi::write_stream(RADIOLIB_SX126X_CMD_SET_RX, data);
 }
 
 /**
@@ -653,26 +654,6 @@ sync_scan_channel(
 		return ue_t{error_t{ok_.error()}};
 	}
 	return *ok_;
-}
-
-/*!
-  \brief Get one truly random byte from RSSI noise.
-  \returns TRNG byte.
-*/
-inline uint8_t random_byte() {
-	spi::set_register_value(RADIOLIB_SX126X_REG_ANA_LNA, RADIOLIB_SX126X_LNA_RNG_ENABLED, 0, 0);
-	spi::set_register_value(RADIOLIB_SX126X_REG_ANA_MIXER, RADIOLIB_SX126X_MIXER_RNG_ENABLED, 0, 0);
-
-	rx(RADIOLIB_SX126X_RX_TIMEOUT_INF);
-	delay_ms(10);
-
-	uint8_t rand = 0x00;
-	read_register(RADIOLIB_SX126X_REG_RANDOM_NUMBER_0, &rand, 1);
-	standby();
-
-	spi::set_register_value(RADIOLIB_SX126X_REG_ANA_LNA, RADIOLIB_SX126X_LNA_RNG_DISABLED, 0, 0);
-	spi::set_register_value(RADIOLIB_SX126X_REG_ANA_MIXER, RADIOLIB_SX126X_MIXER_RNG_DISABLED, 0, 0);
-	return rand;
 }
 
 template <float target>

@@ -1,13 +1,7 @@
 {
-    "clangd.arguments": [
-        "--compile-commands-dir=${workspaceFolder}/build",
-        "--query-driver=**/*"
-    ],
-    "cSpell.words": [
-        "IRAM",
-        "LOGI",
-        "LOGW",
-        "MFIO",
-        "WHRM"
-    ]
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build",
+    "--query-driver=**/*"
+  ],
+  "cSpell.words": ["IRAM", "LOGI", "LOGW", "MFIO", "rxlength", "WHRM"]
 }

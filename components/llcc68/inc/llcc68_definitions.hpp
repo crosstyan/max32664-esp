@@ -24,6 +24,35 @@ constexpr auto DEFAULT_CR           = RADIOLIB_SX126X_LORA_CR_4_7;
 constexpr auto DEFAULT_LDR_OPTIMIZE = RADIOLIB_SX126X_LORA_LOW_DATA_RATE_OPTIMIZE_ON;
 constexpr auto DEFAULT_FREQUENCY    = freq_t{433.2};
 
+enum class COMMAND_STATUS : uint8_t {
+	RESERVED                   = 0x00,
+	RFU                        = 0x01,
+	DATA_AVAILABLE             = 0x02,
+	COMMAND_TIMEOUT            = 0x03,
+	COMMAND_PROCESSING_ERROR   = 0x04,
+	FAILURE_TO_EXECUTE_COMMAND = 0x05,
+	COMMAND_TX_DONE            = 0x06,
+};
+
+enum class CHIP_MODE : uint8_t {
+	UNUSED    = 0x00,
+	RFU       = 0x01,
+	STBY_RC   = 0x02,
+	STBY_XOSC = 0x03,
+	FS        = 0x04,
+	RX        = 0x05,
+	TX        = 0x06,
+};
+
+
+struct __attribute__((packed)) status_t {
+	uint8_t reserved_1 : 1;
+	COMMAND_STATUS command_status : 3;
+	CHIP_MODE chip_mode : 3;
+	uint8_t reserved_2 : 1;
+};
+static_assert(sizeof(status_t) == 1);
+
 struct parameters {
 	uint8_t bw            = DEFAULT_BW;
 	uint8_t sf            = DEFAULT_SF;
