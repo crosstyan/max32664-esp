@@ -14,7 +14,6 @@
 #include "utils/instant.hpp"
 #include "llcc68_definitions.hpp"
 #include "hal_spi.hpp"
-#include "fixed_point.hpp"
 #include "hal_error.hpp"
 
 /**
@@ -468,7 +467,7 @@ constexpr uint32_t
 calc_time_on_air(const size_t len, const calc_time_on_air_t params) {
 	// everything is in microseconds to allow integer arithmetic
 	// some constants have .25, these are multiplied by 4, and have _x4 postfix to indicate that fact
-	const auto bw_                 = fixed_16_16{bw_khz(params.bw)};
+	const auto bw_                 = float{bw_khz(params.bw)};
 	const auto ubw                 = static_cast<uint32_t>(bw_ * 10);
 	const auto sf                  = params.sf;
 	const uint32_t symbolLength_us = (static_cast<uint32_t>(1000 * 10) << sf) / ubw;
@@ -656,13 +655,6 @@ sync_scan_channel(
 	return *ok_;
 }
 
-template <float target = 0.0f>
-bool __in_precision(const s_fixed_16_16 v) {
-	using v_t                = decltype(v);
-	constexpr auto precision = s_fixed_16_16{0.001};
-	return v_t{abs(v - v_t{target})} <= precision;
-}
-
 /*!
   \brief Get one truly random byte from RSSI noise.
   \returns TRNG byte.
@@ -683,6 +675,13 @@ inline uint8_t random_byte() {
 	return rand;
 }
 
+template <float target>
+constexpr bool __in_precision(const float v) {
+	using v_t                = decltype(v);
+	constexpr auto precision = v_t{0.001};
+	return v_t{abs(v - v_t{target})} <= precision;
+}
+
 /*!
   \brief Sets TCXO (Temperature Compensated Crystal Oscillator) configuration.
   \param voltage TCXO reference voltage in volts. Allowed values are 1.6, 1.7, 1.8, 2.2. 2.4, 2.7, 3.0 and 3.3 V.
@@ -695,7 +694,7 @@ inline uint8_t random_byte() {
   \note will return immediately if XTAL is true; DIO3_AS_TCXO_CTRL;
 */
 inline Result<uint32_t, error_t>
-set_TCXO(const s_fixed_16_16 voltage, const uint32_t delay = 5000, const bool XTAL = false) {
+set_TCXO(const float voltage, const uint32_t delay = 5000, const bool XTAL = false) {
 	if (XTAL) {
 		return ue_t{error_t{error::RADIO_INVALID_TCXO_VOLTAGE}};
 	}
@@ -705,11 +704,6 @@ set_TCXO(const s_fixed_16_16 voltage, const uint32_t delay = 5000, const bool XT
 	APP_RADIO_RETURN_ERR(res);
 	if (*err_ & RADIOLIB_SX126X_XOSC_START_ERR) {
 		clear_device_errors();
-	}
-
-	if (__in_precision(voltage)) {
-		reset();
-		return {};
 	}
 
 	uint8_t data[4];

@@ -29,28 +29,28 @@ using ue_t              = utils::unexpected<error_t>;
 /*!
   \brief Basic SPI read command. Defaults to 0x00.
 */
-constexpr uint8_t SPIreadCommand = RADIOLIB_SX126X_CMD_READ_REGISTER;
+constexpr uint8_t SPI_READ_COMMAND = RADIOLIB_SX126X_CMD_READ_REGISTER;
 
 /*!
   \brief Basic SPI write command. Defaults to 0x80.
 */
-constexpr uint8_t SPIwriteCommand = RADIOLIB_SX126X_CMD_WRITE_REGISTER;
+constexpr uint8_t SPI_WRITE_COMMAND = RADIOLIB_SX126X_CMD_WRITE_REGISTER;
 
 /*!
   \brief Basic SPI no-operation command. Defaults to 0x00.
 */
-constexpr uint8_t SPInopCommand = RADIOLIB_SX126X_CMD_NOP;
+constexpr uint8_t SPI_NOP_COMMAND = RADIOLIB_SX126X_CMD_NOP;
 
 /*!
   \brief SPI address width. Defaults to 8, currently only supports 8 and 16-bit addresses.
 */
-constexpr uint8_t SPIaddrWidth = 8;
-static_assert(SPIaddrWidth == 8 || SPIaddrWidth == 16, "SPI address width must be 8 or 16");
+constexpr uint8_t SPI_ADDR_WIDTH = 8;
+static_assert(SPI_ADDR_WIDTH == 8 || SPI_ADDR_WIDTH == 16, "SPI address width must be 8 or 16");
 
 /*!
   \brief Whether the SPI interface is stream-type (e.g. SX126x) or register-type (e.g. SX127x).
 */
-constexpr bool SPIstreamType = true;
+constexpr bool SPI_IS_STREAM_TYPE = true;
 
 constexpr size_t DEFAULT_TIMEOUT_MS = 1000;
 
