@@ -9,8 +9,8 @@
 #include <etl/vector.h>
 #include "result.hpp"
 #include "instant.hpp"
-#include "llcc68_definitions.h"
-#include "hal_spi.h"
+#include "llcc68_definitions.hpp"
+#include "hal_spi.hpp"
 #include "fixed_point.h"
 #include "app_utils.h"
 
@@ -58,7 +58,7 @@ using Code    = spi::Code;
  */
 struct transmit_state_t {
 	bool is_transmitting = false;
-	Instant<uint16_t> start{};
+	Instant start{};
 	uint16_t expected_duration_ms{};
 };
 

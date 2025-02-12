@@ -5,9 +5,9 @@
 
 namespace llcc68 {
 void config_exti() {
-  constexpr auto isr = [] {
-    details::__dio_flag__ = true;
-  };
-  attachInterrupt(DIO1_PIN, isr, RISING);
+	constexpr auto isr = [] {
+		details::__dio_flag__ = true;
+	};
+	// attachInterrupt(DIO1_PIN, isr, RISING);
 }
 }

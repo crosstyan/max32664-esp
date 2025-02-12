@@ -4,72 +4,76 @@
 #ifndef SPI_H
 #define SPI_H
 #include "radio_definitions.h"
-#include "result.h"
-#include "hal_gpio.h"
+#include "result.hpp"
+#include "hal_gpio.hpp"
+
+// https://stackoverflow.com/questions/35089273/why-errno-when-posix-function-indicate-error-condition-by-returning-1-or-null
+// I was thinking about something like error stack.
+// like call stack, but the error context could be pushed
 
 namespace error {
 /**
  * \brief SPI and Radio error codes
  */
 struct spi {
-  static constexpr uint8_t Category = 0x02;
-  enum class Code : uint8_t {
-    OK                    = 0,
-    UNKNOWN               = 1,
-    SPI_INVALID_BIT_RANGE = 2,
-    // A transaction from host took too long to complete and triggered an internal watchdog.
-    // The watchdog mechanism can be disabled by host; it is meant to ensure all outcomes are flagged to the host MCU.
-    SPI_CMD_TIMEOUT = 3,
-    // Processor was unable to process command either because of an invalid opcode or
-    // because an incorrect number of parameters has been provided.
-    SPI_CMD_INVALID = 4,
-    // The command was successfully processed, however the chip could not execute the command;
-    // for instance it was unable to enter the specified device mode or send the requested data
-    SPI_CMD_FAILED           = 5,
-    CHIP_NOT_FOUND           = 6,
-    INVALID_TCXO_VOLTAGE     = 7,
-    INVALID_CODING_RATE      = 8,
-    INVALID_SPREADING_FACTOR = 9,
-    INVALID_BANDWIDTH        = 10,
-    INVALID_FREQUENCY        = 11,
-    INVALID_OUTPUT_POWER     = 12,
-    PACKET_TOO_LONG          = 13,
-    INVALID_CAD_RESULT       = 14,
-    WRONG_MODERN             = 15,
-    RX_TIMEOUT               = 16,
-    CRC_MISMATCH             = 17,
-    BUSY_TX                  = 18,
-    __LAST__
-  };
+	static constexpr uint8_t Category = 0x02;
+	enum class Code : uint8_t {
+		OK                    = 0,
+		UNKNOWN               = 1,
+		SPI_INVALID_BIT_RANGE = 2,
+		// A transaction from host took too long to complete and triggered an internal watchdog.
+		// The watchdog mechanism can be disabled by host; it is meant to ensure all outcomes are flagged to the host MCU.
+		SPI_CMD_TIMEOUT = 3,
+		// Processor was unable to process command either because of an invalid opcode or
+		// because an incorrect number of parameters has been provided.
+		SPI_CMD_INVALID = 4,
+		// The command was successfully processed, however the chip could not execute the command;
+		// for instance it was unable to enter the specified device mode or send the requested data
+		SPI_CMD_FAILED           = 5,
+		CHIP_NOT_FOUND           = 6,
+		INVALID_TCXO_VOLTAGE     = 7,
+		INVALID_CODING_RATE      = 8,
+		INVALID_SPREADING_FACTOR = 9,
+		INVALID_BANDWIDTH        = 10,
+		INVALID_FREQUENCY        = 11,
+		INVALID_OUTPUT_POWER     = 12,
+		PACKET_TOO_LONG          = 13,
+		INVALID_CAD_RESULT       = 14,
+		WRONG_MODERN             = 15,
+		RX_TIMEOUT               = 16,
+		CRC_MISMATCH             = 17,
+		BUSY_TX                  = 18,
+		__LAST__
+	};
 
-  struct t {
-    Code code;
-    operator error::t() const { // NOLINT(*-explicit-constructor)
-      return static_cast<error::t>(generic::Category << 8 | static_cast<uint8_t>(code));
-    }
-    bool operator==(t rhs) const {
-      return code == rhs.code;
-    }
-    bool operator==(Code code) const {
-      return this->code == code;
-    }
-  };
+	struct t {
+		Code code;
+		operator error::t() const { // NOLINT(*-explicit-constructor)
+			return static_cast<error::t>(generic::Category << 8 | static_cast<uint8_t>(code));
+		}
+		bool operator==(t rhs) const {
+			return code == rhs.code;
+		}
+		bool operator==(Code code) const {
+			return this->code == code;
+		}
+	};
 
-  static constexpr Code from_num(uint8_t num) {
-    if (num < static_cast<uint8_t>(Code::__LAST__)) {
-      return static_cast<Code>(num);
-    }
-    return Code::UNKNOWN;
-  }
+	static constexpr Code from_num(uint8_t num) {
+		if (num < static_cast<uint8_t>(Code::__LAST__)) {
+			return static_cast<Code>(num);
+		}
+		return Code::UNKNOWN;
+	}
 
-  static constexpr optional<t> as(const error::t e) {
-    const uint8_t cat  = e >> 8;
-    const uint8_t code = static_cast<uint8_t>(e & 0xff);
-    if (cat == Category) {
-      return t{from_num(code)};
-    }
-    return nullopt;
-  }
+	static constexpr optional<t> as(const error::t e) {
+		const uint8_t cat  = e >> 8;
+		const uint8_t code = static_cast<uint8_t>(e & 0xff);
+		if (cat == Category) {
+			return t{from_num(code)};
+		}
+		return nullopt;
+	}
 };
 }
 
@@ -111,98 +115,93 @@ constexpr bool SPIstreamType = true;
 
 constexpr size_t DEFAULT_TIMEOUT_MS = 1000;
 
-namespace details {
-  inline SPI_HandleTypeDef __spi__;
-}
-
 inline void init() {
-  auto &spi = details::__spi__;
-  // configure SPI Pins
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitTypeDef gpio{};
-  // A5 A6 A7
-  gpio.Pin       = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-  gpio.Mode      = GPIO_MODE_AF_PP;
-  gpio.Pull      = GPIO_NOPULL;
-  gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
-  gpio.Alternate = GPIO_AF0_SPI1;
-  HAL_GPIO_Init(GPIOA, &gpio);
+	// auto &spi = details::__spi__;
+	// // configure SPI Pins
+	// __HAL_RCC_GPIOA_CLK_ENABLE();
+	// GPIO_InitTypeDef gpio{};
+	// // A5 A6 A7
+	// gpio.Pin       = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	// gpio.Mode      = GPIO_MODE_AF_PP;
+	// gpio.Pull      = GPIO_NOPULL;
+	// gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+	// gpio.Alternate = GPIO_AF0_SPI1;
+	// HAL_GPIO_Init(GPIOA, &gpio);
 
-  __HAL_RCC_SPI1_CLK_ENABLE();
-  spi.Instance         = SPI1;
-  spi.Init.Mode        = SPI_MODE_MASTER;
-  spi.Init.Direction   = SPI_DIRECTION_2LINES;
-  spi.Init.DataSize    = SPI_DATASIZE_8BIT;
-  spi.Init.CLKPolarity = SPI_POLARITY_LOW;
-  spi.Init.CLKPhase    = SPI_PHASE_1EDGE;
-  spi.Init.NSS         = SPI_NSS_SOFT;
-  // https://community.st.com/t5/missing-articles/how-is-my-spi-s-baudrate-calculated-using-stm32cubemx/td-p/49592
-  // https://stackoverflow.com/questions/58125052/the-best-spi-baudrate-prescaler
-  spi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-  spi.Init.FirstBit          = SPI_FIRSTBIT_MSB;
-  spi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
-  // https://electronics.stackexchange.com/questions/28179/spi-ti-or-motorola-mode
-  spi.Init.TIMode = SPI_TIMODE_DISABLE;
+	// __HAL_RCC_SPI1_CLK_ENABLE();
+	// spi.Instance         = SPI1;
+	// spi.Init.Mode        = SPI_MODE_MASTER;
+	// spi.Init.Direction   = SPI_DIRECTION_2LINES;
+	// spi.Init.DataSize    = SPI_DATASIZE_8BIT;
+	// spi.Init.CLKPolarity = SPI_POLARITY_LOW;
+	// spi.Init.CLKPhase    = SPI_PHASE_1EDGE;
+	// spi.Init.NSS         = SPI_NSS_SOFT;
+	// // https://community.st.com/t5/missing-articles/how-is-my-spi-s-baudrate-calculated-using-stm32cubemx/td-p/49592
+	// // https://stackoverflow.com/questions/58125052/the-best-spi-baudrate-prescaler
+	// spi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+	// spi.Init.FirstBit          = SPI_FIRSTBIT_MSB;
+	// spi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
+	// // https://electronics.stackexchange.com/questions/28179/spi-ti-or-motorola-mode
+	// spi.Init.TIMode = SPI_TIMODE_DISABLE;
 
-  if (HAL_SPI_Init(&spi) != HAL_OK) {
-    while (true)
-      ;
-  }
+	// if (HAL_SPI_Init(&spi) != HAL_OK) {
+	// 	while (true);
+	// }
 
-  // https://github.com/stm32duino/Arduino_Core_STM32/wiki/HAL-configuration
-  GPIO_InitTypeDef gpio_cs{};
-  // PA4
-  gpio_cs.Pin   = GPIO_PIN_4;
-  gpio_cs.Mode  = GPIO_MODE_OUTPUT_PP;
-  gpio_cs.Pull  = GPIO_NOPULL;
-  gpio_cs.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOA, &gpio_cs);
+	// // https://github.com/stm32duino/Arduino_Core_STM32/wiki/HAL-configuration
+	// GPIO_InitTypeDef gpio_cs{};
+	// // PA4
+	// gpio_cs.Pin   = GPIO_PIN_4;
+	// gpio_cs.Mode  = GPIO_MODE_OUTPUT_PP;
+	// gpio_cs.Pull  = GPIO_NOPULL;
+	// gpio_cs.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	// HAL_GPIO_Init(GPIOA, &gpio_cs);
 
-  GPIO_InitTypeDef gpio_busy{};
-  // PA2
-  gpio_busy.Pin   = GPIO_PIN_2;
-  gpio_busy.Mode  = GPIO_MODE_INPUT;
-  gpio_busy.Pull  = GPIO_NOPULL;
-  gpio_busy.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOA, &gpio_busy);
+	// GPIO_InitTypeDef gpio_busy{};
+	// // PA2
+	// gpio_busy.Pin   = GPIO_PIN_2;
+	// gpio_busy.Mode  = GPIO_MODE_INPUT;
+	// gpio_busy.Pull  = GPIO_NOPULL;
+	// gpio_busy.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	// HAL_GPIO_Init(GPIOA, &gpio_busy);
 
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	// HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 }
 
 inline void cs_low() {
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 }
 
 inline void cs_high() {
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 }
 
 inline void before_transaction() {}
 inline void after_transaction() {}
 
 inline uint8_t hal_transfer(const uint8_t data) {
-  uint8_t recv           = 0;
-  auto &spi              = details::__spi__;
-  const volatile auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(&data), &recv, 1, 10);
-  static_cast<void>(ok);
-  return recv;
+	uint8_t recv           = 0;
+	auto &spi              = details::__spi__;
+	const volatile auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(&data), &recv, 1, 10);
+	static_cast<void>(ok);
+	return recv;
 }
 
 inline Code hal_transfer_buffer(const uint8_t *tx_data, uint8_t *rx_data, size_t size) {
-  auto &spi     = details::__spi__;
-  const auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(tx_data), rx_data, size, 100);
-  if (ok != HAL_OK) {
-    return Code::SPI_CMD_FAILED;
-  }
-  return Code::OK;
+	auto &spi     = details::__spi__;
+	const auto ok = HAL_SPI_TransmitReceive(&spi, const_cast<uint8_t *>(tx_data), rx_data, size, 100);
+	if (ok != HAL_OK) {
+		return Code::SPI_CMD_FAILED;
+	}
+	return Code::OK;
 }
 
 inline void delay_ms(const size_t ms) {
-  ::delay(ms);
+	::delay(ms);
 }
 
 static uint32_t hal_millis() {
-  return ::millis();
+	return ::millis();
 }
 
 /**
@@ -292,7 +291,7 @@ transfer_stream(const uint8_t *cmd, uint8_t cmd_size, bool write, const uint8_t 
 */
 inline Result<Unit, error_t>
 read_stream(uint8_t *cmd, uint8_t cmd_size, uint8_t *data, uint8_t size, bool wait = true) {
-  return transfer_stream(cmd, cmd_size, false, nullptr, data, size, wait);
+	return transfer_stream(cmd, cmd_size, false, nullptr, data, size, wait);
 };
 
 /*!
@@ -304,7 +303,7 @@ read_stream(uint8_t *cmd, uint8_t cmd_size, uint8_t *data, uint8_t size, bool wa
 */
 inline Result<Unit, error_t>
 read_stream(uint8_t cmd, uint8_t *data, uint8_t size, bool wait = true) {
-  return read_stream(&cmd, 1, data, size, wait);
+	return read_stream(&cmd, 1, data, size, wait);
 };
 
 /*!
@@ -317,7 +316,7 @@ read_stream(uint8_t cmd, uint8_t *data, uint8_t size, bool wait = true) {
 */
 inline Result<Unit, error_t>
 write_stream(const uint8_t *cmd, const uint8_t cmd_size, const uint8_t *data, const uint8_t size, bool wait = true) {
-  return transfer_stream(cmd, cmd_size, true, data, nullptr, size, wait);
+	return transfer_stream(cmd, cmd_size, true, data, nullptr, size, wait);
 };
 
 /*!
@@ -329,35 +328,35 @@ write_stream(const uint8_t *cmd, const uint8_t cmd_size, const uint8_t *data, co
 */
 inline Result<Unit, error_t>
 write_stream(const uint8_t cmd, const uint8_t *data, const uint8_t size, const bool wait = true) {
-  return write_stream(&cmd, 1, data, size, wait);
+	return write_stream(&cmd, 1, data, size, wait);
 };
 namespace llcc68 {
-  inline error_t parse_status(const uint8_t in) {
+	inline error_t parse_status(const uint8_t in) {
 #ifndef SKIP_ERROR_CHECK
-    constexpr auto MASK = 0b00001110;
-    if (const auto IN_MASKED = in & MASK; IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_TIMEOUT) {
-      return error_t{Code::SPI_CMD_TIMEOUT};
-    } else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_INVALID) {
-      return error_t{Code::SPI_CMD_INVALID};
-    } else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_FAILED) {
-      return error_t{Code::SPI_CMD_FAILED};
-    } else if ((in == 0x00) || (in == 0xFF)) {
-      return error_t{Code::SPI_CMD_INVALID};
-    }
+		constexpr auto MASK = 0b00001110;
+		if (const auto IN_MASKED = in & MASK; IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_TIMEOUT) {
+			return error_t{Code::SPI_CMD_TIMEOUT};
+		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_INVALID) {
+			return error_t{Code::SPI_CMD_INVALID};
+		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_FAILED) {
+			return error_t{Code::SPI_CMD_FAILED};
+		} else if ((in == 0x00) || (in == 0xFF)) {
+			return error_t{Code::SPI_CMD_INVALID};
+		}
 #endif
 
-    return error_t{Code::OK};
-  }
+		return error_t{Code::OK};
+	}
 
-  inline error_t check_stream() {
-    uint8_t status        = 0;
-    constexpr uint8_t cmd = RADIOLIB_SX126X_CMD_GET_STATUS;
-    const auto st         = spi::transfer_stream(&cmd, 1, false, nullptr, &status, 1);
-    if (!st.has_value()) {
-      return st.error();
-    }
-    return parse_status(status);
-  }
+	inline error_t check_stream() {
+		uint8_t status        = 0;
+		constexpr uint8_t cmd = RADIOLIB_SX126X_CMD_GET_STATUS;
+		const auto st         = spi::transfer_stream(&cmd, 1, false, nullptr, &status, 1);
+		if (!st.has_value()) {
+			return st.error();
+		}
+		return parse_status(status);
+	}
 }
 }
 
