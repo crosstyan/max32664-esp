@@ -28,9 +28,12 @@ enum class COMMAND_STATUS : uint8_t {
 	RESERVED                   = 0x00,
 	RFU                        = 0x01,
 	DATA_AVAILABLE             = 0x02,
-	COMMAND_TIMEOUT            = 0x03,
-	COMMAND_PROCESSING_ERROR   = 0x04,
-	FAILURE_TO_EXECUTE_COMMAND = 0x05,
+	COMMAND_TIMEOUT            = 0x03, // i.e. TIMEOUT
+	TIMEOUT                    = 0x03,
+	COMMAND_PROCESSING_ERROR   = 0x04, // i.e. INVALID
+	INVALID                    = 0x04,
+	FAILURE_TO_EXECUTE_COMMAND = 0x05, // i.e. FAILED
+	FAILED                     = 0x05,
 	COMMAND_TX_DONE            = 0x06,
 };
 

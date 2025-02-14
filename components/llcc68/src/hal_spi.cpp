@@ -49,7 +49,7 @@ void init() {
 	// See also the phase
 	// https://docs.espressif.com/projects/esp-idf/en/v5.3.2/esp32/api-reference/peripherals/spi_master.html#spi-transactions
 	spi_device_interface_config_t dev_config = {
-		.command_bits   = 0,
+		.command_bits   = 8,
 		.address_bits   = 0,
 		.dummy_bits     = 0,
 		.mode           = 0,
@@ -113,8 +113,13 @@ void transfer(const uint8_t cmd, const uint16_t reg, const uint8_t *out, uint8_t
 /*!
 	\brief wait for busy pin to go down
 	\return true if the pin goes down, return false if timeout
+	\note The LLCC68 uses the pin BUSY to indicate the status of the chip and
+			its ability (or not) to receive another command while internal processing
+			occurs. Prior to executing one of the generic functions, it is thus
+			necessary to check the status of BUSY to make sure the chip is in a state
+			where it can process another function.
 */
-bool wait_for_not_busy(const size_t timeout_ms) {
+inline bool wait_for_not_busy(const size_t timeout_ms) {
 	if constexpr (BUSY_PIN == GPIO_NUM_NC) {
 		utils::delay_ms(timeout_ms);
 		return true;
@@ -129,89 +134,96 @@ bool wait_for_not_busy(const size_t timeout_ms) {
 	}
 }
 
-Result<uint8_t, error_t>
-write_stream(const uint8_t *cmd, const uint8_t cmd_size, const uint8_t *out, const uint8_t size, const size_t timeout_ms) {
+
+Result<Unit, error_t>
+read_stream_raw(uint8_t cmd, uint8_t *in, const uint8_t size, const size_t timeout_ms) {
 	if (not wait_for_not_busy(timeout_ms)) {
 		return ue_t{error::TIMEOUT};
 	}
 
 	spi_transaction_ext_t transaction;
-	uint8_t status = 0;
-	// SPI_TRANS_CS_KEEP_ACTIVE
-	if (cmd_size == 1) {
-		transaction = spi_transaction_ext_t{
-			.base = {
-				.flags     = SPI_TRANS_VARIABLE_CMD,
-				.cmd       = cmd[0],
-				.length    = static_cast<size_t>(size * 8),
-				.rxlength  = 1 * 8,
-				.tx_buffer = out,
-				.rx_buffer = &status,
-			},
-			.command_bits = static_cast<uint8_t>(1 * 8),
-			.address_bits = 0,
-			.dummy_bits   = 0,
-		};
-	} else if (cmd_size == 2) {
-		transaction = spi_transaction_ext_t{
-			.base = {
-				.flags     = SPI_TRANS_VARIABLE_CMD,
-				.cmd       = static_cast<uint16_t>(cmd[1] << 8 | cmd[0]),
-				.length    = static_cast<size_t>(size * 8),
-				.tx_buffer = out,
-			},
-			.command_bits = static_cast<uint8_t>(2 * 8),
-			.address_bits = 0,
-			.dummy_bits   = 0,
-		};
-	} else {
-		std::unreachable();
+	transaction = spi_transaction_ext_t{
+		.base = {
+			.flags     = SPI_TRANS_VARIABLE_CMD,
+			.cmd       = cmd,
+			.length    = static_cast<size_t>(size * 8),
+			.rxlength  = static_cast<size_t>(size * 8),
+			.rx_buffer = in,
+		},
+		.command_bits = static_cast<uint8_t>(1 * 8),
+		.address_bits = 0,
+		.dummy_bits   = 0,
+	};
+	esp_err_t err = spi_device_transmit(details::spi_device, &transaction.base);
+	if (err != ESP_OK) {
+		ESP_LOGE(TAG, "failed to transfer %s (%d)", esp_err_to_name(err), err);
+		return ue_t{error::FAILED};
 	}
+	return {};
+}
+
+
+Result<Unit, error_t>
+read_stream_raw(uint8_t cmd, std::span<uint8_t> in, const size_t timeout_ms) {
+	return read_stream_raw(cmd, in.data(), in.size(), timeout_ms);
+};
+
+Result<Unit, error_t>
+write_stream_no_check(uint8_t cmd, const uint8_t *data, const uint8_t size, const size_t timeout_ms) {
+	if (not wait_for_not_busy(timeout_ms)) {
+		return ue_t{error::TIMEOUT};
+	}
+
+	spi_transaction_ext_t transaction;
+	transaction = spi_transaction_ext_t{
+		.base = {
+			.flags     = SPI_TRANS_VARIABLE_CMD,
+			.cmd       = cmd,
+			.length    = static_cast<size_t>(size * 8),
+			.rxlength  = 0,
+			.tx_buffer = data,
+		},
+		.command_bits = static_cast<uint8_t>(1 * 8),
+		.address_bits = 0,
+		.dummy_bits   = 0,
+	};
 	esp_err_t err = spi_device_polling_transmit(details::spi_device, &transaction.base);
 	if (err != ESP_OK) {
 		ESP_LOGE(TAG, "failed to transfer %s (%d)", esp_err_to_name(err), err);
 		return ue_t{error::FAILED};
 	}
-	return status;
+	return {};
 }
 
-// the first byte in status should be treated as a status
 Result<Unit, error_t>
-read_stream_with_status(const uint8_t *cmd, const uint8_t cmd_size, uint8_t *in, const uint8_t size, const size_t timeout_ms) {
+write_stream_no_check(uint8_t cmd, std::span<const uint8_t> data, const size_t timeout_ms) {
+	return write_stream_no_check(cmd, data.data(), data.size(), timeout_ms);
+}
+
+Result<Unit, error_t>
+write_stream_with_ext_status(uint8_t cmd, std::span<const uint8_t> data, std::span<uint8_t> status_out, const size_t timeout_ms) {
 	if (not wait_for_not_busy(timeout_ms)) {
 		return ue_t{error::TIMEOUT};
 	}
+	if (status_out.size() > data.size()) {
+		return ue_t{error::INVALID_SIZE};
+	}
 
 	spi_transaction_ext_t transaction;
-	if (cmd_size == 1) {
-		transaction = spi_transaction_ext_t{
-			.base = {
-				.flags     = SPI_TRANS_VARIABLE_CMD,
-				.cmd       = cmd[0],
-				.length    = static_cast<size_t>(size * 8),
-				.rxlength  = static_cast<size_t>(size * 8),
-				.rx_buffer = in,
-			},
-			.command_bits = static_cast<uint8_t>(1 * 8),
-			.address_bits = 0,
-			.dummy_bits   = 0,
-		};
-	} else if (cmd_size == 2) {
-		transaction = spi_transaction_ext_t{
-			.base = {
-				.flags     = SPI_TRANS_VARIABLE_CMD,
-				.cmd       = static_cast<uint16_t>(cmd[1] << 8 | cmd[0]),
-				.length    = static_cast<size_t>(size * 8),
-				.rx_buffer = in,
-			},
-			.command_bits = static_cast<uint8_t>(2 * 8),
-			.address_bits = 0,
-			.dummy_bits   = 0,
-		};
-	} else {
-		std::unreachable();
-	}
-	esp_err_t err = spi_device_polling_transmit(details::spi_device, &transaction.base);
+	transaction = spi_transaction_ext_t{
+		.base = {
+			.flags     = SPI_TRANS_VARIABLE_CMD,
+			.cmd       = cmd,
+			.length    = static_cast<size_t>(data.size() * 8),
+			.rxlength  = static_cast<size_t>(status_out.size() * 8),
+			.tx_buffer = data.data(),
+			.rx_buffer = status_out.data(),
+		},
+		.command_bits = static_cast<uint8_t>(1 * 8),
+		.address_bits = 0,
+		.dummy_bits   = 0,
+	};
+	esp_err_t err = spi_device_transmit(details::spi_device, &transaction.base);
 	if (err != ESP_OK) {
 		ESP_LOGE(TAG, "failed to transfer %s (%d)", esp_err_to_name(err), err);
 		return ue_t{error::FAILED};
@@ -235,7 +247,7 @@ Result<Unit, error_t> read_register_burst_with_status(uint16_t reg, uint8_t *buf
 		.address_bits = static_cast<uint8_t>(2 * 8),
 		.dummy_bits   = 0,
 	};
-	esp_err_t err = spi_device_polling_transmit(details::spi_device, &transaction.base);
+	esp_err_t err = spi_device_transmit(details::spi_device, &transaction.base);
 	if (err != ESP_OK) {
 		ESP_LOGE(TAG, "failed to transfer %s (%d)", esp_err_to_name(err), err);
 		return ue_t{error::FAILED};
@@ -252,7 +264,6 @@ Result<uint8_t, error_t> write_register_burst(uint16_t reg, const uint8_t *buffe
 	// - Command: SPI_WRITE_COMMAND (1 byte)
 	// - Address: reg (2 bytes)
 	// - Data: buffer (size bytes)
-	//
 	transaction = spi_transaction_ext_t{
 		.base = {
 			.flags     = SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR,

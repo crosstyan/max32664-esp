@@ -5,7 +5,9 @@
 #define SPI_H
 #include <cstdint>
 #include <span>
+#include <utility>
 #include "radio_definitions.hpp"
+#include "llcc68_definitions.hpp"
 #include "hal_gpio.hpp"
 #include "utils/result.hpp"
 #include "hal_error.hpp"
@@ -13,8 +15,9 @@
 
 namespace hal::spi {
 template <typename T, typename E>
-using Result = utils::Result<T, E>;
-using Unit   = utils::Unit;
+using Result       = utils::Result<T, E>;
+using Unit         = utils::Unit;
+constexpr auto TAG = "spi";
 
 constexpr auto MOSI_PIN = GPIO_NUM_12;
 constexpr auto MISO_PIN = GPIO_NUM_4;
@@ -51,52 +54,77 @@ constexpr size_t DEFAULT_TIMEOUT_MS = 1000;
 */
 void init();
 
-/*!
-  \brief SPI burst read method.
-  \param reg Address of SPI register to read.
-  \param buffer Pointer to array that will hold the read data.
-  \param size Number of bytes that will be read.
-*/
-Result<Unit, error_t> read_register_burst_with_status(uint16_t reg, uint8_t *buffer, uint8_t size);
+
+inline error_t status_to_err(const uint8_t status) {
+	const auto st = *reinterpret_cast<const llcc68::status_t *>(&status);
+	switch (st.command_status) {
+	case llcc68::COMMAND_STATUS::COMMAND_TIMEOUT:
+		return error::SPI_TIMEOUT;
+	case llcc68::COMMAND_STATUS::FAILURE_TO_EXECUTE_COMMAND:
+		return error::SPI_CMD_FAILED;
+	case llcc68::COMMAND_STATUS::INVALID:
+		return error::SPI_CMD_INVALID;
+	default:
+		return error::OK;
+	}
+}
 
 /*!
-  \brief SPI burst write method.
-  \param reg Address of SPI register to write.
-  \param buffer Pointer to array that holds the data that will be written.
-  \param size Number of bytes that will be written.
+  See also LLCC68 chapter 10 Host Controller Interface
 */
-Result<uint8_t, error_t> write_register_burst(uint16_t reg, const uint8_t *buffer, uint8_t size);
+
+/*!
+  \brief perform SPI transaction
+  \param cmd SPI operation command.
+  \param cmd_size SPI command length in bytes.
+  \param data Data that will be transferred from slave to master.
+  \param size Number of bytes to transfer.
+  \note the first byte in `in` is the status byte, it's expected to check it for user
+*/
+Result<Unit, error_t>
+read_stream_raw(uint8_t cmd, uint8_t *in, const uint8_t size, const size_t timeout_ms);
 
 Result<Unit, error_t>
-read_stream_with_status(const uint8_t *cmd, const uint8_t cmd_size, uint8_t *in, const uint8_t size, const size_t timeout_ms);
+read_stream_raw(uint8_t cmd, std::span<uint8_t> in, const size_t timeout_ms);
 
 /*!
-  \brief Method to perform a read transaction with SPI stream.
+  \brief perform SPI transaction
   \param cmd SPI operation command.
   \param cmd_size SPI command length in bytes.
   \param data Data that will be transferred from slave to master.
   \param size Number of bytes to transfer.
-  \param wait Whether to wait for some GPIO at the end of transfer (e.g. BUSY line on SX126x/SX128x).
+  \tparam N the size of the internal data buffer (since one copy is needed for checking the status byte)
+  \note the first byte in `in` is the status byte, it's expected to check it for user
 */
+template <size_t N = 18>
 inline Result<Unit, error_t>
-read_stream(uint8_t *cmd, uint8_t cmd_size, uint8_t *data, uint8_t size);
-
-/*!
-  \brief Method to perform a read transaction with SPI stream.
-  \param cmd SPI operation command.
-  \param data Data that will be transferred from slave to master.
-  \param size Number of bytes to transfer.
-  \param wait Whether to wait for some GPIO at the end of transfer (e.g. BUSY line on SX126x/SX128x).
-*/
-inline Result<Unit, error_t>
-read_stream(uint8_t cmd, uint8_t *data, uint8_t size) {
-	return read_stream(&cmd, 1, data, size);
+read_stream(uint8_t cmd, uint8_t *data, uint8_t size, const size_t timeout_ms = DEFAULT_TIMEOUT_MS) {
+	using ue_t = utils::unexpected<error_t>;
+	uint8_t buffer_[N];
+	// with 1 byte for status
+	const auto buffer_size = size + 1;
+	if (buffer_size > N) {
+		return ue_t{error::INVALID_SIZE};
+	}
+	auto buffer = std::span{buffer_, buffer_size};
+	auto res    = read_stream_raw(cmd, buffer, timeout_ms);
+	if (not res) {
+		return ue_t{res.error()};
+	}
+	const auto status = buffer[0];
+	if (const auto err = status_to_err(status); err != error::OK) {
+		return ue_t{err};
+	}
+	std::copy(std::span{buffer.data() + 1, size}, data);
+	return {};
 };
 
-inline Result<Unit, error_t>
-read_stream(uint8_t cmd, std::span<uint8_t> data) {
-	return read_stream(cmd, data.data(), data.size());
+template <size_t N = 18>
+Result<Unit, error_t>
+read_stream(uint8_t cmd, std::span<uint8_t> data, const size_t timeout_ms = DEFAULT_TIMEOUT_MS) {
+	return read_stream<N>(cmd, data.data(), data.size(), timeout_ms);
 };
+
 
 /*!
   \brief Method to perform a write transaction with SPI stream.
@@ -104,54 +132,56 @@ read_stream(uint8_t cmd, std::span<uint8_t> data) {
   \param cmd_size SPI command length in bytes.
   \param data Data that will be transferred from master to slave.
   \param size Number of bytes to transfer.
-  \param wait Whether to wait for some GPIO at the end of transfer (e.g. BUSY line on SX126x/SX128x).
 */
-inline Result<uint8_t, error_t>
-write_stream(const uint8_t *cmd, const uint8_t cmd_size, const uint8_t *data, const uint8_t size);
+Result<Unit, error_t>
+write_stream_no_check(uint8_t cmd, const uint8_t *data, const uint8_t size, const size_t timeout_ms);
 
-/*!
-  \brief Method to perform a write transaction with SPI stream.
-  \param cmd SPI operation command.
-  \param data Data that will be transferred from master to slave.
-  \param size Number of bytes to transfer.
-  \param wait Whether to wait for some GPIO at the end of transfer (e.g. BUSY line on SX126x/SX128x).
-*/
-inline Result<uint8_t, error_t>
-write_stream(const uint8_t cmd, const uint8_t *data, const uint8_t size) {
-	return write_stream(&cmd, 1, data, size);
+Result<Unit, error_t>
+write_stream_no_check(uint8_t cmd, std::span<const uint8_t> data, const size_t timeout_ms);
+
+Result<Unit, error_t>
+write_stream_with_ext_status(uint8_t cmd, std::span<const uint8_t> data, std::span<uint8_t> status_out, const size_t timeout_ms);
+
+template <size_t N = 18>
+Result<Unit, error_t>
+write_stream(uint8_t cmd, std::span<const uint8_t> data, const size_t timeout_ms) {
+	uint8_t buffer_[N];
+	if (data.size() > N) {
+		return ue_t{error::INVALID_SIZE};
+	}
+	auto status_buf = std::span{buffer_, data.size() + 1};
+	auto err        = write_stream_with_ext_status(cmd, data, status_buf, timeout_ms);
+	if (not err) {
+		return err;
+	}
+	uint8_t i = 0;
+	for (const auto st : status_buf) {
+		if (const auto err = status_to_err(st); err != error::OK) {
+			ESP_LOGE(TAG, "failed to write with 0x%02x at byte %u", st, i);
+			return ue_t{err};
+		}
+		i += 1;
+	}
+	return {};
+}
+
+template <size_t N = 18>
+Result<Unit, error_t> read_register_burst_with_status(uint16_t reg, std::span<uint8_t> buffer, const size_t timeout_ms) {
+	uint8_t buffer_[N];
+	auto err = read_stream_raw(SPI_READ_COMMAND, buffer_, timeout_ms);
+	if (not err) {
+		return err;
+	}
+	return {};
 };
 
-inline Result<uint8_t, error_t>
-write_stream(const uint8_t cmd, std::span<const uint8_t> data) {
-	return write_stream(cmd, data.data(), data.size());
-};
+Result<Unit, error_t> write_register_burst(uint16_t reg, std::span<const uint8_t> buffer, const size_t timeout_ms);
+}
 
 namespace llcc68 {
-	inline error_t parse_status(const uint8_t in) {
-#ifndef SKIP_ERROR_CHECK
-		constexpr auto MASK = 0b00001110;
-		if (const auto IN_MASKED = in & MASK; IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_TIMEOUT) {
-			return error_t{error::SPI_TIMEOUT};
-		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_INVALID) {
-			return error_t{error::SPI_CMD_INVALID};
-		} else if (IN_MASKED == RADIOLIB_SX126X_STATUS_CMD_FAILED) {
-			return error_t{error::SPI_CMD_FAILED};
-		} else if ((in == 0x00) || (in == 0xFF)) {
-			return error_t{error::SPI_CMD_INVALID};
-		}
-#endif
-		return error_t{error::OK};
-	}
-
-	inline error_t check_stream() {
-		uint8_t status        = 0;
-		constexpr uint8_t cmd = RADIOLIB_SX126X_CMD_GET_STATUS;
-		const auto st         = spi::transfer_stream(&cmd, 1, false, nullptr, &status, 1);
-		if (!st.has_value()) {
-			return st.error();
-		}
-		return parse_status(status);
-	}
+using error_t = hal::spi::error_t;
+inline error_t check_stream() {
+	std::unreachable();
 }
 }
 

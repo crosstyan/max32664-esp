@@ -3,5 +3,13 @@
     "--compile-commands-dir=${workspaceFolder}/build",
     "--query-driver=**/*"
   ],
-  "cSpell.words": ["IRAM", "LOGI", "LOGW", "MFIO", "rxlength", "WHRM"]
+  "cSpell.words": [
+    "IRAM",
+    "LLCC",
+    "LOGI",
+    "LOGW",
+    "MFIO",
+    "rxlength",
+    "WHRM"
+  ]
 }

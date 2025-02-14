@@ -9,7 +9,7 @@
 // https://stackoverflow.com/questions/35089273/why-errno-when-posix-function-indicate-error-condition-by-returning-1-or-null
 // I was thinking about something like error stack.
 // like call stack, but the error context could be pushed
-namespace error {
+namespace hal::error {
 using t = int32_t;
 
 // same definition as esp_err.h
@@ -38,13 +38,13 @@ constexpr t BUSY             = GENERIC_ERR_BASE + 2; /*!< Busy */
 constexpr t SPI_ERR_BASE = 0x1'2000;
 // A transaction from host took too long to complete and triggered an internal watchdog.
 // The watchdog mechanism can be disabled by host; it is meant to ensure all outcomes are flagged to the host MCU.
-constexpr t SPI_TIMEOUT = SPI_ERR_BASE + 1;
+constexpr t SPI_TIMEOUT = SPI_ERR_BASE + 2;
 // Processor was unable to process command either because of an invalid opcode or
 // because an incorrect number of parameters has been provided.
-constexpr t SPI_CMD_INVALID = SPI_ERR_BASE + 2;
+constexpr t SPI_CMD_INVALID = SPI_ERR_BASE + 3;
 // The command was successfully processed, however the chip could not execute the command;
 // for instance it was unable to enter the specified device mode or send the requested data
-constexpr t SPI_CMD_FAILED = SPI_ERR_BASE + 3;
+constexpr t SPI_CMD_FAILED = SPI_ERR_BASE + 4;
 
 constexpr t RADIO_ERR_BASE                 = 0x1'3000;
 constexpr t RADIO_CHIP_NOT_FOUND           = RADIO_ERR_BASE + 1;
